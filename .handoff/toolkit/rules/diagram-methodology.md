@@ -1,0 +1,367 @@
+# Handoff Diagram Methodology & Business Document Catalogue
+
+Read this file before generating any diagrams or business documents during `/handoff-start`. All rules are normative — follow them exactly.
+
+---
+
+## Part 1 — Diagram Decision Matrix
+
+For each section you are documenting, classify it into one of the five categories below. Then generate diagrams according to the "Required" and "Optional" columns.
+
+**Required**: Generate unconditionally for this section category — no code evidence check needed.
+
+**Optional**: Generate only when clear code evidence exists (see evidence thresholds in § 1.2).
+
+| Section Category | Required Diagrams | Optional Diagrams |
+|---|---|---|
+| Multi-component module (2+ interacting classes or services in the section) | Architecture overview (`flowchart TD`) | Sequence diagram (`sequenceDiagram`) — if async calls, event emissions, or message passing are present |
+| Data layer (models, schemas, ORM, database access) | Entity-relationship (`erDiagram`) | Data flow (`flowchart LR`) — if data is transformed across multiple steps |
+| Pipeline / event flow (queues, streams, webhooks, background jobs) | Data flow (`flowchart LR`) | Sequence diagram (`sequenceDiagram`) — if specific ordering of events matters |
+| Single utility / pure function module | None | None |
+| Entry point / orchestrator (startup scripts, main CLI, top-level routers) | Architecture overview (`flowchart TD`) | Sequence diagram (`sequenceDiagram`) — if the startup sequence has more than 3 steps |
+
+### 1.1 — How to classify a section
+
+Apply the first matching rule:
+
+1. If the section reads from or writes to a database, defines models or schemas, or uses an ORM → **Data layer**
+2. If the section uses queues, streams, webhooks, cron jobs, or background workers → **Pipeline / event flow**
+3. If the section is named "main", "app", "server", "cli", "entrypoint", "bootstrap", "startup", or equivalent → **Entry point / orchestrator**
+4. If the section contains 2 or more classes or services that call each other → **Multi-component module**
+5. If the section contains a single exported function, a set of pure helper functions, or a single class with no inter-service calls → **Single utility / pure function module**
+
+When a section matches multiple categories, apply the first matching rule in this list.
+
+### 1.2 — Evidence thresholds for optional diagrams
+
+Before generating an optional diagram, verify the evidence threshold is met:
+
+- **Sequence diagram** (optional): Evidence threshold = at least one async call (`async/await`, `.then()`, callbacks, event emitters, message broker publish/subscribe), OR a multi-step interaction between two distinct actors visible in the code.
+- **Data flow diagram** (optional): Evidence threshold = data is read from one source, transformed in at least 2 steps, then written to a different destination.
+
+If the evidence threshold is not met, skip the optional diagram. Do not force diagrams on sections that do not benefit from them.
+
+---
+
+## Part 2 — Diagram Authoring Rules
+
+### 2.1 — Mermaid syntax types
+
+Use only the following Mermaid types:
+
+| Diagram type | Mermaid keyword | When to use |
+|---|---|---|
+| Architecture overview | `flowchart TD` | Top-down box-and-arrow showing components and their relationships |
+| Data flow | `flowchart LR` | Left-to-right flow showing data movement between stages |
+| Sequence diagram | `sequenceDiagram` | Ordered message exchanges between actors |
+| Entity-relationship | `erDiagram` | Data model with entities, attributes, and relationships |
+
+Do not use other Mermaid types (`gantt`, `pie`, `gitGraph`, `classDiagram`, etc.) — they are not supported by the extension renderer in this version.
+
+### 2.2 — Element label and `code_refs[].id` naming
+
+When a diagram element represents a module, class, service, or file that has a corresponding `code_refs` entry, assign a matching `id` to that `code_refs` entry using the following convention:
+
+- Lowercase all characters
+- Replace spaces and underscores with hyphens
+- Remove any characters that are not lowercase letters, digits, or hyphens
+- Maximum 40 characters
+- Examples: `AuthService` → `auth-service`, `UserRepository` → `user-repository`, `payment-gateway` → `payment-gateway`
+
+The `id` you assign to a `code_refs` entry must match exactly the label used for the corresponding element in the diagram source. This is how the extension wires click-to-navigate.
+
+Each `id` must be unique within the node's `code_refs` list.
+
+Example:
+
+```yaml
+code_refs:
+  - id: auth-service
+    file: src/auth/service.ts
+    note: Authentication service — handles token issuance and validation
+    line: 1
+  - id: user-repository
+    file: src/users/repository.ts
+    note: User data access layer
+    line: 1
+```
+
+Corresponding diagram element labels: `auth-service` and `user-repository`.
+
+### 2.3 — Diagram block structure
+
+Each diagram block in the `## Diagrams` section must follow this exact structure:
+
+```
+### <Diagram Title>
+<One sentence describing what this diagram shows.>
+
+```mermaid
+<mermaid source>
+```
+```
+
+- The H3 title must be descriptive (e.g., "Authentication Service Architecture", not "Diagram 1")
+- The description sentence must be plain language and stand alone without the diagram
+- The fenced code block must open with ` ```mermaid ` on its own line and close with ` ``` ` on its own line
+
+### 2.4 — Diagram validation procedure
+
+After drafting a diagram, self-validate the Mermaid source before saving:
+
+1. **Check for unclosed brackets or parentheses**: Scan the source for every `[`, `(`, `{`, `"` — verify each has a matching closing character.
+2. **Check keyword correctness**: The first non-whitespace line of the source must be a valid Mermaid graph type keyword (`flowchart`, `sequenceDiagram`, `erDiagram`).
+3. **Check arrow operators**: In flowchart diagrams, all connections must use `-->`, `---`, `-.->`, or `==>`. In sequence diagrams, use `->>`, `-->>`, `->>+`, `--x`.
+4. **Check node label syntax**: Flowchart nodes must be in one of: `id[label]`, `id(label)`, `id([label])`, `id{label}`, `id((label))`. Labels must not contain unescaped `[]`, `()`, or `{}` characters inside them.
+
+**If a validation error is detected**:
+- Attempt one correction: fix the specific syntax error identified.
+- Re-validate the corrected source.
+- If the source still fails after one correction attempt: **replace the entire diagram block** with a prose description of the same content. Add the following bullet to the node's `## Warnings` section:
+
+  `- DIAGRAM VALIDATION FAILED — replaced with prose: <Diagram Title>`
+
+Do not leave broken Mermaid source in a node. Either it renders correctly or it is replaced with prose.
+
+---
+
+## Part 3 — Business Document Catalogue
+
+The agent must evaluate each section for business document opportunities and produce applicable documents. The documents are stored as typed nodes in the same `nodes/` directory as handover nodes.
+
+Read all four catalogue entries. For each section you document, check all applicable detection signals.
+
+---
+
+### 3.1 — ADR (Architecture Decision Record)
+
+**`doc_type: adr`**
+
+**Purpose**: Captures a significant architectural decision — the context that led to it, what was decided, and the consequences.
+
+**Template**:
+
+```markdown
+---
+id: <adr-id>
+title: "ADR: <decision title>"
+depth: supporting
+schema_version: 1
+doc_type: adr
+adr_status: proposed
+adr_date: <ISO 8601 date>
+code_refs:
+  - file: <most relevant file>
+    note: <description>
+---
+
+## Context
+<What situation or problem prompted this decision. One or more paragraphs. Include constraints, requirements, or forces that shaped the choice.>
+
+## Decision
+<What was decided. Be specific. Name the choice made. One or more paragraphs.>
+
+## Consequences
+<What trade-offs result from this decision. Include both positive outcomes and accepted downsides. One or more paragraphs.>
+```
+
+**`adr_status` values**: `proposed` (decision made but not fully implemented), `accepted` (decision implemented and in effect), `deprecated` (decision was reversed or replaced).
+
+**Detection signals** — produce an ADR when you observe any of the following:
+
+- Source comments beginning with `// Architecture Decision:`, `// ADR:`, `# Architecture Decision:`, `# ADR:`, or `/* ADR:` — extract the decision described in the comment
+- Source comments beginning with `// Note:`, `// Reason:`, `// Why:` that explain a non-obvious architectural choice (e.g., why a specific library was used instead of the obvious default)
+- An unusual technology or library choice that is non-standard for the language/framework (e.g., using a custom auth system instead of a well-known library, using a non-default ORM, a hand-rolled dependency injection container)
+- Commit messages containing the words "decided", "chose", "rejected", "trade-off", "we went with", "instead of" — extract the context from the surrounding commit messages
+- A comment block of 3+ lines that explains the reasoning behind a pattern or design
+
+**One ADR per decision**: If multiple decisions are found in the same section, produce one ADR per decision (e.g., `auth-jwt-decision-adr.md`, `auth-session-store-adr.md`).
+
+**Naming convention**: `<section-id>-<short-decision-slug>-adr.md` (e.g., `auth-jwt-strategy-adr.md`).
+
+---
+
+### 3.2 — Runbook
+
+**`doc_type: runbook`**
+
+**Purpose**: Step-by-step operational instructions for a recurring task or procedure. Targeted at someone who needs to perform the task — not explain the code.
+
+**Template**:
+
+```markdown
+---
+id: <runbook-id>
+title: "Runbook: <procedure title>"
+depth: supporting
+schema_version: 1
+doc_type: runbook
+code_refs:
+  - file: <most relevant script or config file>
+    note: <description>
+---
+
+## Purpose
+<One sentence: what this runbook achieves when followed.>
+
+## Prerequisites
+<What must be true before starting. List any required access, tools, environment variables, or state. Use a bulleted list.>
+
+## Steps
+1. <First action — be specific. Include exact commands where applicable.>
+2. <Second action.>
+...
+
+## Expected Outcome
+<What success looks like. Be specific: what output to expect, what state the system should be in, what to verify.>
+```
+
+**Detection signals** — produce a Runbook when you encounter any of the following:
+
+- A `Makefile` with targets that represent operational procedures (e.g., `deploy`, `start`, `migrate`, `seed`, `backup`)
+- A `Dockerfile` or `docker-compose.yml` — produce a Runbook for the local development startup procedure
+- Files named `*deploy*`, `*bootstrap*`, `*migrate*`, `*seed*`, `*start*`, `*reset*`, `*backup*` in any directory
+- A `scripts/` or `bin/` directory containing shell scripts — produce one Runbook per logical operation (not per file)
+- A CLI entrypoint (a file with `main()`, `if __name__ == '__main__'`, or similar) that performs an operational task (not just starting a server)
+- A README section titled "Getting Started", "Running Locally", "Deployment", "Operations" — produce a Runbook capturing those steps
+
+**One Runbook per procedure**: If a section has both a startup script and a deployment script, produce separate runbooks (e.g., `local-dev-runbook.md`, `deploy-production-runbook.md`).
+
+**Naming convention**: `<short-procedure-slug>-runbook.md` (e.g., `local-dev-setup-runbook.md`, `deploy-production-runbook.md`).
+
+---
+
+### 3.3 — Onboarding Guide
+
+**`doc_type: onboarding_guide`**
+
+**Purpose**: A meta-document produced once per session. Gives a new team member the fastest path into the codebase — project context, where to start, and what to read next.
+
+**Template**:
+
+```markdown
+---
+id: onboarding-guide
+title: "Onboarding Guide: <Project Name>"
+depth: supporting
+schema_version: 1
+doc_type: onboarding_guide
+code_refs:
+  - file: <README or main entry point>
+    note: Best starting point for understanding the project
+---
+
+## Project Summary
+<One paragraph: what this project does, who uses it, and why it exists. Derived from the README and the core nodes. Write for someone who has never seen the project.>
+
+## Reading Order
+1. [<Core Node Title>](nodes/<id>.md)
+2. [<Core Node Title>](nodes/<id>.md)
+...
+<Supporting nodes follow core nodes>
+N. [<Supporting Node Title>](nodes/<id>.md)
+...
+<Peripheral nodes last, if worth including>
+
+## Related Documents
+- [<ADR title>](nodes/<adr-id>.md)
+- [<Runbook title>](nodes/<runbook-id>.md)
+```
+
+**Cardinality**: Produce exactly **one** Onboarding Guide per `/handoff-start` session. Always. There are no exceptions.
+
+**When to produce it**: After all handover nodes, ADRs, and Runbooks have been saved. It must reference all nodes and documents produced in the session.
+
+**Reading Order rules**:
+- Core nodes first, in the order they appear in `index.json`
+- Supporting nodes next
+- Peripheral nodes last — include only if they are essential to understanding (omit truly peripheral config-only nodes if the list would exceed 10 entries)
+- ADRs and Runbooks are listed in `## Related Documents`, not in `## Reading Order`
+
+**Naming convention**: Always `onboarding-guide.md`. If a delta re-run produces new nodes, overwrite the existing onboarding guide with an updated version.
+
+---
+
+### 3.4 — API Summary
+
+**`doc_type: api_summary`**
+
+**Purpose**: Summarises the project's exposed APIs for consumers who need to integrate with or call the project.
+
+**Template**:
+
+```markdown
+---
+id: api-summary
+title: "API Summary: <Project Name>"
+depth: supporting
+schema_version: 1
+doc_type: api_summary
+code_refs:
+  - file: <openapi.yaml or schema.graphql or equivalent>
+    note: API contract file — source of truth for all endpoints
+---
+
+## Overview
+<What APIs are exposed, to whom, and for what purpose. One or more paragraphs.>
+
+## Endpoints / Operations
+<Derived from the API contract file. List or table format. For REST: method + path + one-sentence description. For GraphQL: query/mutation name + one-sentence description. For gRPC: service + method + one-sentence description.>
+
+## Authentication
+<How callers authenticate. Be specific: token type, header name, OAuth flow, API key location, etc.>
+```
+
+**Detection trigger** (conditional — produce only when triggered):
+
+Produce an API Summary if and only if any of the following files exist in the project:
+- `openapi.yaml` or `openapi.json` (at any depth in the repo)
+- `swagger.yaml` or `swagger.json`
+- `schema.graphql` or `*.graphql` in a `schema/` or `api/` directory
+- `api.yaml` or `api.json` at the project root
+- A proto file (`*.proto`) in any directory
+
+If none of these files exist, do not produce an API Summary. Do not fabricate endpoint information.
+
+**Naming convention**: Always `api-summary.md`.
+
+---
+
+## Part 4 — Frontmatter and Index Rules for Business Documents
+
+### 4.1 — Required frontmatter fields for all document types
+
+Business documents are stored as typed nodes. All standard node frontmatter rules apply (FM-01 through FM-09 from `output-schema.md`), with the following additions and exceptions:
+
+- `doc_type` must be set to the correct value for the document type
+- `depth` must be `supporting` for all business documents unless a different classification is clearly warranted
+- `code_refs` must have at least one entry pointing to the most relevant file for this document
+- `schema_version: 1` — unchanged
+
+### 4.2 — `doc_refs` on linking handover nodes
+
+When a handover node motivated the creation of a business document (e.g., the auth node triggered an ADR), add a `doc_refs` field to that handover node's frontmatter:
+
+```yaml
+doc_refs:
+  - nodes/auth-jwt-strategy-adr.md
+```
+
+If the handover node already has `doc_refs`, append to the list.
+
+### 4.3 — Index entry additions
+
+When writing the index entry for a business document node, include the `doc_type` field:
+
+```json
+{
+  "id": "auth-jwt-strategy-adr",
+  "title": "ADR: JWT Strategy for Authentication",
+  "depth": "supporting",
+  "dependencies": [],
+  "file": "nodes/auth-jwt-strategy-adr.md",
+  "doc_type": "adr"
+}
+```
+
+Apply the same depth-ordering rule: all `core` first, then `supporting`, then `peripheral`. Business documents at `supporting` depth sort after `supporting` handover nodes (append in creation order within the `supporting` group).
