@@ -80,6 +80,24 @@ GITIGNORE
 ok "Toolkit installed to ${TOOLKIT_DIR}/"
 ok ".handoff/.gitignore written (toolkit is gitignored — only output/ is committed)"
 
+# ── Register Claude Code slash commands ───────────────────────────────────────
+info "Registering Claude Code slash commands in .claude/commands/..."
+mkdir -p ".claude/commands"
+
+cat > ".claude/commands/handoff-start.md" <<'CMD'
+Read `.handoff/toolkit/skills/handoff-start/SKILL.md` completely, then follow every instruction in it exactly.
+CMD
+
+cat > ".claude/commands/handoff-review.md" <<'CMD'
+Read `.handoff/toolkit/skills/handoff-review/SKILL.md` completely, then follow every instruction in it exactly. $ARGUMENTS
+CMD
+
+cat > ".claude/commands/handoff-validate.md" <<'CMD'
+Read `.handoff/toolkit/skills/handoff-validate/SKILL.md` completely, then follow every instruction in it exactly. The file to validate is: $ARGUMENTS
+CMD
+
+ok "Slash commands registered: /handoff-start, /handoff-review, /handoff-validate"
+
 # ── CLAUDE.md wiring ──────────────────────────────────────────────────────────
 echo ""
 echo "  ─── Next step ────────────────────────────────────────────────────────"
