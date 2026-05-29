@@ -160,6 +160,75 @@ Use only files that you have read and confirmed exist. Use forward slashes in al
 
 ---
 
+## Part 2b — Diagram Planning (run after Step 3.7 for each section)
+
+After completing Part 3 field inference for a section, plan its diagrams before moving to the next section.
+
+### Step 2b.1 — Classify the section
+
+Read `.handoff/toolkit/rules/diagram-methodology.md` Part 1. Apply the five-category classification to the current section. Record the category.
+
+### Step 2b.2 — Determine required diagrams
+
+From the decision matrix, identify which diagram types are required for this section category. If "None", skip to Step 2b.4 and record no diagrams.
+
+### Step 2b.3 — Check optional diagram evidence
+
+For each optional diagram type applicable to this section category, check the evidence threshold defined in diagram-methodology.md § 1.2. Generate the optional diagram only if the threshold is met.
+
+### Step 2b.4 — Draft diagram source
+
+For each diagram to be generated:
+
+1. Draft the Mermaid source using the correct syntax type from diagram-methodology.md § 2.1
+2. Name each element in the diagram to match the primary components visible in the files read during Part 3
+3. For components that have a corresponding `code_refs` entry, assign a `code_refs[].id` to that entry following the naming convention in diagram-methodology.md § 2.2. Use the same identifier as the diagram element label
+4. Write a one-sentence description for the diagram
+5. Choose a descriptive title (e.g., "Authentication Service Architecture", "User Data Model", "Order Processing Flow")
+
+Store the drafted diagram(s) for this section in memory — they will be validated and saved during Part 5b.
+
+### Step 2b.5 — Assign `code_refs[].id` values
+
+For each `code_refs` entry whose corresponding component appears as a named element in a planned diagram, add the `id` field now (before writing the node). Apply the naming rules from diagram-methodology.md § 2.2. Do not add `id` to refs that are not represented in any diagram element.
+
+---
+
+## Part 2c — Business Document Planning (run once, after all sections in Part 3 are complete)
+
+After all handover sections have been processed through Part 3 and Part 2b, plan business documents.
+
+### Step 2c.1 — Scan for ADR signals
+
+Re-read the files collected during Part 3 (already in memory) and check for ADR detection signals as defined in diagram-methodology.md § 3.1. For each detected signal:
+- Note which section it belongs to
+- Draft the ADR title and core decision
+- Record it in a list: `[(section_id, decision_title), ...]`
+
+### Step 2c.2 — Scan for Runbook signals
+
+Check for Runbook detection signals as defined in diagram-methodology.md § 3.2. For each detected signal:
+- Identify the procedure it represents
+- Record it in a list: `[(signal_file, procedure_title), ...]`
+
+### Step 2c.3 — Check for API contract file
+
+Check whether any API contract trigger file exists (defined in diagram-methodology.md § 3.4). If found, record it for API Summary generation.
+
+### Step 2c.4 — Draft business documents
+
+For each item in your ADR list, draft the full ADR document using the template in diagram-methodology.md § 3.1.
+
+For each item in your Runbook list, draft the full Runbook document using the template in diagram-methodology.md § 3.2.
+
+If an API contract file was found, draft the API Summary using the template in diagram-methodology.md § 3.4.
+
+Always draft one Onboarding Guide after all other documents are drafted, using the template in diagram-methodology.md § 3.3. The Onboarding Guide references all nodes and documents produced in this session.
+
+Store all drafted documents in memory — they will be saved during Part 5c.
+
+---
+
 ## Part 4 — Delta Re-Run Logic
 
 Run Part 4 only when `index.json` has a `generated_at_sha` (Case C resume). For fresh sessions, skip to Part 5.
@@ -265,9 +334,26 @@ inferred_fields:
 <Bulleted list of warnings — omit section entirely if no warnings found>
 ```
 
+### Step 5b — Validate and attach diagrams
+
+Run this step before Step 5.4. It is part of node assembly.
+
+**Step 5b.1 — Validate diagram source**: For each diagram drafted for this section in Part 2b, run the four-point validation procedure from diagram-methodology.md § 2.4:
+
+1. Check for unclosed brackets, parentheses, and quotes
+2. Check that the first non-whitespace line is a valid Mermaid type keyword
+3. Check arrow operator correctness
+4. Check node label syntax
+
+**Step 5b.2 — Correct or replace**: If a diagram fails validation, attempt one correction. Re-validate. If it still fails, replace the diagram block with a prose description and add a `## Warnings` bullet: `- DIAGRAM VALIDATION FAILED — replaced with prose: <title>`.
+
+**Step 5b.3 — Set `diagram_format`**: Count how many diagrams passed validation and were not replaced with prose. If at least one diagram remains, add `diagram_format: mermaid` to the node's frontmatter. If zero diagrams remain after replacements, do not add `diagram_format`.
+
+**Step 5b.4 — Assemble `## Diagrams` section**: For each surviving diagram, append a diagram block to the node body using the structure from diagram-methodology.md § 2.3. Place the `## Diagrams` section as the last section in the body, after `## Warnings` if present. If no diagrams survived, omit the `## Diagrams` section entirely.
+
 ### Step 5.4 — Validate the node
 
-Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the assembled content. Check all applicable rules: FM-01 through FM-09, CR-01 through CR-05, OP-01 through OP-05, BD-01 through BD-09.
+Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the assembled content. Check all applicable rules: FM-01 through FM-09, CR-01 through CR-05, OP-01 through OP-05, OP-06 through OP-12 (new rules from feature 002), BD-01 through BD-09 (for `handover_node` type only).
 
 **If all rules pass**: proceed to Step 5.5.
 
@@ -315,6 +401,61 @@ Following session-protocol.md Rule 2 (event: node completed):
 - Write session.json
 
 Print a one-line status: "✓ [title] ([depth]) — [N] sections remaining."
+
+---
+
+## Part 5c — Save Business Documents
+
+Run Part 5c after all handover nodes have been saved through Part 5 (i.e., after the last section's Step 5.7 completes). This part saves all business documents drafted in Part 2c.
+
+### Step 5c.1 — Save ADR documents
+
+For each ADR drafted in Part 2c:
+
+1. Apply FM-01 through FM-09 and OP-06 and OP-12 (adr rules) from `output-schema.md` to validate the document
+2. Assign a node `id` following the naming convention: `<section-id>-<short-decision-slug>-adr` (e.g., `auth-jwt-strategy-adr`)
+3. Write the document to `.handoff/output/nodes/<id>.md`
+4. Add an index entry with `doc_type: "adr"`:
+   ```json
+   { "id": "...", "title": "ADR: ...", "depth": "supporting", "dependencies": [], "file": "nodes/<id>.md", "doc_type": "adr" }
+   ```
+5. Add the document path (`nodes/<id>.md`) to the `doc_refs` frontmatter of the handover node that motivated this ADR. Read the handover node file, add or update `doc_refs`, write it back.
+
+### Step 5c.2 — Save Runbook documents
+
+For each Runbook drafted in Part 2c:
+
+1. Validate against FM-01 through FM-09, OP-06, and OP-12 (runbook rules)
+2. Assign a node `id` following the naming convention: `<short-procedure-slug>-runbook` (e.g., `local-dev-setup-runbook`)
+3. Write the document to `.handoff/output/nodes/<id>.md`
+4. Add an index entry with `doc_type: "runbook"`:
+   ```json
+   { "id": "...", "title": "Runbook: ...", "depth": "supporting", "dependencies": [], "file": "nodes/<id>.md", "doc_type": "runbook" }
+   ```
+5. Add the document path to `doc_refs` of the nearest relevant handover node (the one covering the operational area)
+
+### Step 5c.3 — Save API Summary (conditional)
+
+If an API Summary was drafted in Part 2c:
+
+1. Validate against FM-01 through FM-09, OP-06, and OP-12 (api_summary rules)
+2. Use `id: api-summary`; write to `.handoff/output/nodes/api-summary.md`
+3. Add index entry with `doc_type: "api_summary"`
+
+### Step 5c.4 — Save Onboarding Guide
+
+The Onboarding Guide must reference all nodes and documents now in `index.json`. Re-read `index.json` to get the complete current list.
+
+1. Build `## Reading Order` from the `index.json` nodes array (core first, then supporting, then peripheral); exclude ADRs, Runbooks, and other business document types from this list
+2. Build `## Related Documents` from all ADR and Runbook entries added to `index.json`
+3. Write `## Project Summary` as a paragraph derived from the project's README and the core nodes' business contexts
+4. Validate against FM-01 through FM-09, OP-06, and OP-12 (onboarding_guide rules)
+5. Write to `.handoff/output/nodes/onboarding-guide.md` (overwrite if it exists from a previous run)
+6. Add index entry with `doc_type: "onboarding_guide"` if not already present; update if it exists
+
+### Step 5c.5 — Final index sort
+
+After all business documents are added, re-sort `index.json` `nodes` array: core → supporting → peripheral. Within each depth group, handover nodes come before business documents (in insertion order within each sub-group). Write the final `index.json`.
 
 ---
 

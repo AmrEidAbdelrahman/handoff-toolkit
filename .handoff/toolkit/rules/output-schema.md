@@ -56,6 +56,30 @@ For every item in `code_refs`, check:
 
 **Rule OP-05**: `inferred_fields` is optional. Its presence or absence does not affect whether a node passes or fails validation. A node with a non-empty `inferred_fields` array is still schema-valid. However, once all fields listed in `inferred_fields` have been confirmed by the giver via `/handoff-review`, `inferred_fields` must be absent or set to an empty array `[]` before the node is considered fully reviewed.
 
+**Rule OP-06**: If `doc_type` is present, it must be exactly one of the following string values: `handover_node`, `adr`, `runbook`, `onboarding_guide`, `api_summary`. Any other value fails this rule. If `doc_type` is absent, the node is treated as `doc_type: handover_node` for all purposes — absence is not an error.
+
+**Rule OP-07**: `diagram_format` must be present if and only if the node body contains a `## Diagrams` section with at least one diagram block. A node with a `## Diagrams` section but no `diagram_format` frontmatter field fails this rule. A node with `diagram_format` in frontmatter but no `## Diagrams` section in the body also fails. When present, `diagram_format` must equal the string `mermaid` (only supported value in schema version 1).
+
+**Rule OP-08**: Within a `## Diagrams` section, each diagram block must contain all three of the following in order: (1) an H3 heading (`### <title>`) as the diagram title, (2) a non-empty plain-text description line immediately after the H3 heading and before the code block, (3) a fenced code block opened with ` ```mermaid ` and closed with ` ``` `. A `## Diagrams` section that contains text but no complete diagram block in this format fails this rule.
+
+**Rule OP-09**: If `doc_refs` is present, it must be an array of non-empty strings. Each string must be a relative path to a node file that exists in the same `.handoff/output/` directory tree. A `doc_refs` entry pointing to a non-existent file fails this rule. An empty array `[]` is acceptable.
+
+**Rule OP-10**: If a `code_refs` entry contains an `id` field, that `id` must (a) match the pattern `^[a-z0-9]+(-[a-z0-9]+)*$`, (b) be no more than 40 characters long, and (c) be unique within the node's `code_refs` list — no two entries in the same node's `code_refs` may share the same `id` value. `code_refs` entries without an `id` are always valid.
+
+**Rule OP-11**: If a `## Diagrams` section is present, any diagram element label intended to be navigable must exactly match a `code_refs[].id` value in the same node. This rule is advisory for authoring — it is not enforced during validation (the validator cannot inspect rendered SVG). Validated via extension behaviour rather than schema check.
+
+**Rule OP-12**: Nodes with a `doc_type` other than `handover_node` must satisfy the following body section requirements in addition to all other applicable rules. Standard `handover_node` rules (BD-01 through BD-09) apply only to `handover_node` documents; for typed documents, the type-specific rules below replace BD-01 through BD-09:
+
+- **`doc_type: adr`**: Body must contain `## Context`, `## Decision`, and `## Consequences` sections (exact text, H2, in that order). Each must be non-empty. No other H2 sections are permitted. Optional frontmatter: `adr_status` (must be one of `proposed`, `accepted`, `deprecated` if present); `adr_date` (must be ISO 8601 if present).
+
+- **`doc_type: runbook`**: Body must contain `## Purpose`, `## Prerequisites`, `## Steps`, and `## Expected Outcome` sections (exact text, H2, in that order). Each must be non-empty. `## Steps` must contain a numbered list with at least one item.
+
+- **`doc_type: onboarding_guide`**: Body must contain `## Project Summary`, `## Reading Order`, and `## Related Documents` sections (exact text, H2, in that order). Each must be non-empty. `## Reading Order` must contain at least one numbered list item that is a Markdown link.
+
+- **`doc_type: api_summary`**: Body must contain `## Overview`, `## Endpoints / Operations`, and `## Authentication` sections (exact text, H2, in that order). Each must be non-empty.
+
+For all typed documents: H1 headings are still prohibited (Rule BD-07 applies). `schema_version` remains `1` — no increment required for typed documents.
+
 ---
 
 ## Part 2 — Body Section Validation
