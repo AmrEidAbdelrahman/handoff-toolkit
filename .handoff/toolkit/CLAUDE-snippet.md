@@ -1,19 +1,21 @@
 # Installation Instructions
 
-Copy the block below and paste it into your project's `CLAUDE.md` file. This wires up the Handoff toolkit so Claude Code (and compatible agents) load it automatically when the project is opened.
+After running `install.sh`, add the block below to your project's `CLAUDE.md` file (created at the project root). The install script does this automatically if `CLAUDE.md` is already present — you only need to paste manually if you skipped auto-wiring.
 
 ---
 
 ```markdown
 # Handoff Toolkit
 
-This project has the Handoff toolkit installed. Read `.handoff/toolkit/SKILL.md` for toolkit overview and available commands.
+This project has the Handoff toolkit installed.
+Read .handoff/toolkit/SKILL.md for the toolkit overview and available commands.
 
 Available commands:
-- `/handoff-start` — start or resume a guided handover session
-- `/handoff-validate` — validate a node file before saving
+- /handoff-start    — autonomously document the project (no questions asked)
+- /handoff-review   — interactively review AI-inferred content after /handoff-start
+- /handoff-validate — validate a node file: /handoff-validate .handoff/output/nodes/<id>.md
 ```
 
 ---
 
-After pasting, save `CLAUDE.md`. The toolkit is now active. Run `/handoff-start` to begin your first handover session.
+After saving `CLAUDE.md`, the toolkit is active. Run `/handoff-start` in Claude Code to begin.
