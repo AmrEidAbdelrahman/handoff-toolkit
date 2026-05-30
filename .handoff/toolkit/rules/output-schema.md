@@ -82,6 +82,10 @@ For all typed documents: H1 headings are still prohibited (Rule BD-07 applies). 
 
 **Rule OP-13**: Advisory. If a node has `depth: core` or `depth: supporting` and its body contains a `## Technical Context` section, that section SHOULD include at least one inline code snippet — defined as a bold label line of the form `**\`<path>\` lines N–M**` immediately followed by a fenced code block. Absence of inline snippets does not cause a validation failure; this is a quality guideline only.
 
+**Rule OP-14**: If `quality_score` is present, it must be a YAML mapping. Permitted keys are exactly: `business_value_clarity`, `why_coverage`, `snippet_relevance`, `actionability`, `no_unsupported_claims`. No other keys are allowed. Each value must be the YAML integer `1` or `2` — the value `0` is invalid in a saved node (0 means the node still needs a rewrite), and string values (`"1"`) are invalid. Not every key must be present (e.g., `snippet_relevance` is omitted for typed documents that have no inline snippets). Absence of `quality_score` is valid — nodes generated before feature 004 are not required to have this field.
+
+**Rule OP-15**: If `confidence_tags` is present, it must be a YAML mapping. Each value must be exactly one of the strings `high`, `medium`, or `low`. Any other value fails this rule. Each key SHOULD be a field name that also appears in the node's `inferred_fields` array (a key for a field not in `inferred_fields` is an authoring inconsistency, not a hard failure). When all inferred fields have been confirmed via `/handoff-review`, `confidence_tags` must be absent or an empty mapping. Absence of `confidence_tags` is valid — nodes generated before feature 004 are not required to have this field.
+
 ---
 
 ## Part 2 — Body Section Validation

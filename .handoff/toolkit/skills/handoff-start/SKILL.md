@@ -118,6 +118,12 @@ Build the following sections:
 
 ### Step 2a.3 — Save the architecture overview node
 
+First, apply citations and tags to the body drafted in Step 2a.2:
+- Every sentence in the `## Business Context` section must carry a trailing `(src: …)` citation (same convention as Step 5.3 — `README §<heading>`, `<relative-path>:<line>`, `commit <sha7>`, or `inferred`). The `### Domains` bullets under `## Technical Context` do not require citations.
+- Assign `confidence_tags` for `business_context` using the Step 5.2 rules (`high` if drawn from an explicit README description; `medium` if drawn from the set of model/route names; `low` if only from directory names). Honour the three-way link rule: a `business_context` resting on `(src: inferred)` is `low`.
+
+Then run the **quality refinement pass (Part 5d)** on this node: read the rubric, score the applicable dimensions (`snippet_relevance` is N/A — the architecture overview has no inline snippets), rewrite any dimension scoring 0, and record the final `quality_score`.
+
 Assemble the complete node file:
 
 ```
@@ -130,9 +136,16 @@ diagram_format: mermaid
 generated_at: <current ISO 8601 timestamp>
 inferred_fields:
   - business_context
+confidence_tags:
+  business_context: <high | medium | low>
+quality_score:
+  business_value_clarity: <1 | 2>
+  why_coverage: <1 | 2>
+  actionability: <1 | 2>
+  no_unsupported_claims: <1 | 2>
 ---
 
-<body from Step 2a.2>
+<body from Step 2a.2, with citations applied>
 ```
 
 1. Write to `.handoff/output/nodes/architecture-overview.md`
@@ -222,6 +235,14 @@ Draw on these sources, in priority order:
 
 Write `business_context` as 2–4 sentences describing: what business capability this domain provides, why it exists, and what would break for users if it disappeared.
 
+**Record the source signal for each sentence (for citations).** As you write each sentence, note the strongest signal it rests on, using one of these four forms — you will render it as a trailing `(src: …)` citation in Step 5.3:
+- A README section → `README §<heading>` (e.g., `README §Tournament Management`)
+- A specific source line → `<relative-path>:<line>` (e.g., `competition/models.py:14`)
+- A git commit message → `commit <7-char-sha>` (e.g., `commit a1b2c3d`)
+- A pure naming/pattern inference with no concrete source → `inferred`
+
+Keep each sentence's source signal in memory alongside the sentence text. Never fabricate a source — if the sentence is a genuine inference with no concrete file/section/commit behind it, its signal is `inferred`, and per the three-way link rule (see Step 5.2) the `business_context` field must then be in `inferred_fields` and tagged `low` in `confidence_tags`.
+
 If none of the above sources yield usable signal, fall back to Part 6 (minimal-question fallback) for this field only.
 
 ### Step 3.4 — Infer `depth`
@@ -249,6 +270,8 @@ Scan the files read in Step 3.2 for signals of documented architectural choices:
 
 For each identified decision, write one bullet: describe what was decided and why (inferred from the comment or pattern). If no decisions are found, omit the `## Decisions` section entirely from the node.
 
+**Record the source signal for each decision bullet (for citations).** Note the signal each bullet rests on, using the same four forms as Step 3.3 (`README §<heading>`, `<relative-path>:<line>`, `commit <sha7>`, or `inferred`). A decision inferred from a `// Note:` comment cites that comment's line; a decision inferred from an unusual library choice cites the line where the library is imported/used. Keep each bullet's signal in memory for rendering in Step 5.3.
+
 ### Step 3.6 — Infer `warnings`
 
 Scan the files read in Step 3.2 for these signals:
@@ -261,6 +284,8 @@ Scan the files read in Step 3.2 for these signals:
 - Known deprecated APIs being used (e.g., `componentWillMount` in React, deprecated library methods)
 
 For each warning found, write one bullet describing the issue and its location (file + approximate line if known). If no warnings are found, omit the `## Warnings` section entirely from the node.
+
+**Record the source signal for each warning bullet (for citations).** Most warnings have a concrete location — cite it as `<relative-path>:<line>` (e.g., the line of the `TODO`/`FIXME` comment, or the start line of an over-long function). Use the same four forms as Step 3.3. A warning that is a general observation with no specific line is `inferred`. Keep each bullet's signal in memory for rendering in Step 5.3.
 
 ### Step 3.7 — Collect inline code snippets
 
@@ -377,6 +402,19 @@ Do NOT include a field in `inferred_fields` if:
 - The giver answered a question about it (see Part 6 — it is then human-provided)
 - It was read verbatim from an explicit human-written architecture document
 
+**Build `confidence_tags` alongside `inferred_fields`.** For every field in `inferred_fields`, assign a confidence level using these deterministic rules (apply the first that matches the strongest signal that produced the field):
+
+- **`high`** — the field was inferred from an explicit README heading, a docstring, or a source comment (`# Note:`, `# Why:`, `# ADR:`, `// Reason:`, etc.). The intent was written by a human in prose.
+- **`medium`** — the field was inferred from structured-but-undocumented signals: route/URL paths, model or entity names, view/handler class names, or import patterns.
+- **`low`** — the field was inferred solely from directory or file names, with no corroborating model, route, comment, or README signal.
+
+**Three-way link rule (must hold for every field):** these three facts always travel together — if any one is true, all three must be true:
+1. The field's claim(s) rest on `(src: inferred)` (no concrete source found in Step 3.3/3.5/3.6).
+2. The field's `confidence_tags` entry is `low`.
+3. The field is in `inferred_fields`.
+
+So: any field whose sentences are all `(src: inferred)` is `low` and must be in `inferred_fields`. Conversely, a field tagged `high` must have at least one concrete (non-`inferred`) citation.
+
 ### Step 5.3 — Assemble the node
 
 Build the complete node file content with YAML frontmatter and Markdown body:
@@ -393,15 +431,26 @@ inferred_fields:
   [- depth]
   [- decisions]
   [- warnings]
+confidence_tags:
+  business_context: <high | medium | low>
+  [depth: <high | medium | low>]
+  [decisions: <high | medium | low>]
+  [warnings: <high | medium | low>]
+quality_score:   # values filled in by Part 5d after assembly — leave as placeholders here
+  business_value_clarity: <1 | 2>
+  why_coverage: <1 | 2>
+  snippet_relevance: <1 | 2>
+  actionability: <1 | 2>
+  no_unsupported_claims: <1 | 2>
 ---
 
 ## Business Context
 
-<Inferred business context — 2–4 sentences>
+<Inferred business context — 2–4 sentences. Each sentence ends with a citation: see "Citation rendering" below.>
 
 ## Technical Context
 
-<Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points>
+<Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points. NO citations in this section.>
 
 <For each inline snippet collected in Step 3.7, insert immediately after the narrative paragraphs:>
 
@@ -414,14 +463,30 @@ inferred_fields:
 
 ## Decisions
 
-<Bulleted list of decisions — omit section entirely if no decisions found>
+<Bulleted list of decisions — each bullet ends with a citation. Omit section entirely if no decisions found>
 
 ## Warnings
 
-<Bulleted list of warnings — omit section entirely if no warnings found>
+<Bulleted list of warnings — each bullet ends with a citation. Omit section entirely if no warnings found>
 ```
 
 The bold label line (`**\`path\` lines N–M**`) must appear on the line immediately before the opening fence with no blank line between them.
+
+**`confidence_tags`**: Include one entry per field in `inferred_fields`, using the levels assigned in Step 5.2. Do not include entries for fields not in `inferred_fields`.
+
+**`quality_score`**: Write the five keys as placeholders here (omit `snippet_relevance` only for typed documents that have no inline snippets). The actual integer values (1 or 2) are determined and written by the quality refinement pass in Part 5d, which runs after this assembly and before validation.
+
+**Citation rendering (the `(src: …)` markers)**: For every sentence in `## Business Context`, every bullet in `## Decisions`, and every bullet in `## Warnings`, append a trailing citation using the source signal you recorded in Steps 3.3 / 3.5 / 3.6:
+
+- Format: a single space, then `(src: <identifier>)` at the end of the sentence/bullet.
+- Identifier forms: `README §<heading>`, `<relative-path>:<line>`, `commit <sha7>`, or `inferred`.
+- Example: `Manages tournament brackets and match scheduling so organisers can run competitions end to end. (src: competition/models.py:14)`
+- Example (inferred): `This domain appears to coordinate notification delivery across channels. (src: inferred)`
+
+Rules:
+- **Do NOT** add citations to `## Technical Context` paragraphs or to inline snippet bold-label lines — those are self-evidently sourced from the code (the label already names the file and lines).
+- **Never fabricate** a source. If a sentence is a genuine inference with no concrete file/section/commit, cite `(src: inferred)` — and ensure (per the Step 5.2 three-way link rule) that the enclosing field is in `inferred_fields` and tagged `low` in `confidence_tags`.
+- Every sentence in the three cited sections must carry exactly one citation. An uncited sentence in those sections fails the `no_unsupported_claims` rubric dimension (Part 5d) and forces a rewrite.
 
 ### Step 5b — Validate and attach diagrams
 
@@ -440,10 +505,29 @@ Run this step before Step 5.4. It is part of node assembly.
 
 **Step 5b.4 — Assemble `## Diagrams` section**: For each surviving diagram, append a diagram block to the node body using the structure from diagram-methodology.md § 2.3. Place the `## Diagrams` section as the last section in the body, after `## Warnings` if present. If no diagrams survived, omit the `## Diagrams` section entirely.
 
+### Part 5d — Quality Refinement Pass
+
+Run Part 5d after the node body and diagrams are assembled (Step 5b) and before validation (Step 5.4). This is the draft → critique → refine pass. It applies to every node type (handover nodes, the architecture overview, and all business documents).
+
+**Step 5d.1 — Read the rubric**: Read `.handoff/toolkit/rules/quality-rubric.md` completely. Do not rely on memory — read it fresh.
+
+**Step 5d.2 — Score the node**: For the node you just assembled, score each applicable dimension (per the rubric's applicability table for this `doc_type`) as 0, 1, or 2. Apply each dimension's score-0 trigger as a **mechanical test** — if the trigger condition is literally true, the score is 0. Counter your own self-assessment bias: a node you wrote will feel fine; score by the triggers, not by feel. Skip dimensions marked N/A for this doc_type.
+
+**Step 5d.3 — Rewrite failing dimensions**: For each dimension scoring 0:
+1. Rewrite ONLY the section(s) named in that dimension's "Section(s)" line (not the whole node), applying the dimension's "Rewrite action on 0".
+2. Re-score that one dimension. It must now be ≥ 1. If a rewrite still scores 0 after two attempts, apply the dimension's fallback (e.g., soften an unsupported claim to a cited observation; reduce boilerplate snippets to one and note the domain is thin) so the dimension reaches 1.
+3. Preserve citations and the three-way link rule during any rewrite — newly added uncited sentences must get a `(src: …)` citation; new `(src: inferred)` sentences force their field to `low` / `inferred_fields`.
+
+**Step 5d.4 — Write final scores**: Replace the `quality_score` placeholders in the frontmatter with the final per-dimension integer values (1 or 2 only). Omit `snippet_relevance` for typed documents that have no inline snippets. No dimension may be saved as 0.
+
+Print a one-line note only if any rewrite happened: "  ↻ refined [title]: rewrote <dimension(s)>".
+
 ### Step 5.4 — Validate the node
 
 Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the assembled content:
 - **Always check**: FM-01 through FM-08, OP-01 through OP-09, OP-12, BD-01 through BD-09 (for `handover_node` type only)
+- **OP-14** — `quality_score` must be present, a valid mapping, every value 1 or 2 (no 0), only permitted keys. Fail validation if any value is 0 (Part 5d did not complete) or a key is invalid.
+- **OP-15** — `confidence_tags` must be present when `inferred_fields` is non-empty; every value must be `high`/`medium`/`low`; keys should match `inferred_fields` entries.
 - **FM-09** is now optional — absence of `code_refs` is valid; skip FM-09 check if `code_refs` is absent
 - **CR-01 through CR-05** apply only if `code_refs` is present; skip these checks if `code_refs` is absent
 - **OP-10 and OP-11** are deprecated — skip
@@ -501,6 +585,22 @@ Print a one-line status: "✓ [title] ([depth]) — [N] sections remaining."
 ## Part 5c — Save Business Documents
 
 Run Part 5c after all handover nodes have been saved through Part 5 (i.e., after the last section's Step 5.7 completes). This part saves all business documents drafted in Part 2c.
+
+### Step 5c.0 — Citations and quality pass for every business document
+
+Before writing each business document below (ADR, Runbook, API Summary, Onboarding Guide), apply two passes — the same machinery used for handover nodes:
+
+**Citations**: Add a trailing `(src: …)` citation to every sentence in the document's prose sections, using the four-form convention from Step 5.3. Prose sections by type:
+- ADR → `## Context`, `## Decision`, `## Consequences`
+- Runbook → `## Purpose` (the `## Steps` list and `## Prerequisites`/`## Expected Outcome` operational lines do NOT need citations — they are instructions, not inferred claims)
+- Onboarding Guide → `## Project Summary` (the `## Reading Order` and `## Related Documents` link lists do NOT need citations)
+- API Summary → `## Overview`, `## Authentication` (the `## Endpoints / Operations` list, derived directly from the contract file, does NOT need citations)
+
+Never fabricate a source; use `(src: inferred)` for genuine inferences.
+
+**Quality pass (Part 5d)**: Run the quality refinement pass on each business document. `snippet_relevance` is N/A for all business document types — omit that key. Score the remaining four dimensions, rewrite any scoring 0, and write the final `quality_score` into the document's frontmatter.
+
+Business documents generally carry no `inferred_fields` (they are drafted from explicit signals), so `confidence_tags` is usually absent for them. If a document does include an inferred field, tag it per the Step 5.2 rules.
 
 ### Step 5c.1 — Save ADR documents
 
