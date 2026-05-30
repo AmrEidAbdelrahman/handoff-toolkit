@@ -37,23 +37,25 @@ Parse both parts. If the frontmatter cannot be parsed as valid YAML, output `VAL
 
 ## Step 4 — Run Frontmatter Validation Rules
 
-Work through every rule in the **Part 1 — Frontmatter Validation** section of `output-schema.md`. Check each rule in sequence:
+Work through **every rule in Part 1 — Frontmatter Validation** of `output-schema.md` exactly as written there. Do not rely on memory — the schema file is the authoritative rule list. Check each rule in the order it appears.
 
-- Rules FM-01 through FM-09 (required fields)
-- Rules CR-01 through CR-05 (code refs — check for every item in the `code_refs` array)
-- Rules OP-01 through OP-03 (optional fields — only check if the field is present)
+Important behavioural notes:
+- **FM-09 (`code_refs` optional)**: Absence of `code_refs` is always valid. Only check CR-01–CR-05 if `code_refs` is present.
+- **OP-05, OP-11, OP-13 (advisory rules)**: Log "Advisory: <message>" but do not record a FAIL. These rules never cause a node to fail validation.
+- **OP-12 (typed documents)**: If `doc_type` is present and is not `handover_node`, note which body section requirements apply (per the OP-12 sub-rules for that doc_type) — you will use this in Step 5.
 
-For each rule: record PASS or FAIL. On FAIL, record the rule ID, the specific value that failed, and the exact correction needed.
+For each non-advisory rule: record PASS or FAIL. On FAIL, record the rule ID, the specific value that failed, and the exact correction needed.
 
 ---
 
 ## Step 5 — Run Body Validation Rules
 
-Work through every rule in the **Part 2 — Body Section Validation** section of `output-schema.md`. Check each rule in sequence:
+Work through every rule in **Part 2 — Body Section Validation** of `output-schema.md`. Apply the correct ruleset based on `doc_type`:
 
-- Rules BD-01 through BD-09 (required sections, optional sections, structural rules)
+- **`handover_node` (or absent `doc_type`)**: Apply BD-01 through BD-09 as written.
+- **Any other `doc_type` (`adr`, `runbook`, `onboarding_guide`, `api_summary`)**: Apply the OP-12 body section requirements for that specific type instead of BD-01 through BD-09. Rule BD-07 (no H1 headings) still applies to all doc types. Ignore BD-01 through BD-06, BD-08, BD-09 for typed documents.
 
-For each rule: record PASS or FAIL with the same detail as Step 4.
+For each applicable rule: record PASS or FAIL with the same detail as Step 4.
 
 ---
 

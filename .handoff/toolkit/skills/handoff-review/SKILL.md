@@ -104,7 +104,14 @@ Warnings  <label>           (omit this block if the Warnings section is absent)
 - For each field listed in `inferred_fields`: display label `[AI-guessed]`
 - For all other fields (not in `inferred_fields`): display label `[from code]`
 - `technical_context` is never in `inferred_fields` — always show as `[from code]`
-- `title`, `depth`, `code_refs` are not displayed in the review prompt (they are structural, not narrative)
+- `title` and `depth` are not displayed in the review prompt (they are structural, not narrative)
+- Inline code snippets (fenced code blocks in `## Technical Context`) are structural content derived from source files — they are never reviewed interactively
+
+### Typed document display
+
+For nodes where `doc_type` is `adr`, `runbook`, `onboarding_guide`, or `api_summary`, the body sections differ from the standard `handover_node` sections (`## Business Context`, `## Technical Context`). Display whichever sections are present in the node file, using the same label rules above. Do not require the standard four sections — use the actual section headings as they appear in the node body.
+
+The `architecture-overview` node (`depth: core`, no `doc_type` or `doc_type: handover_node`) is reviewed the same as any other core node.
 
 ---
 

@@ -13,7 +13,9 @@ The session cache is stored as JSON at `.handoff/session.json`. The full structu
   "status": "in_progress | paused | complete | reviewing | paused_review",
   "started_at": "ISO 8601 datetime",
   "project_name": "string",
-  "pending_sections": ["string"],
+  "pending_sections": [
+    { "name": "string", "directories": ["string"], "cross_cutting": false }
+  ],
   "completed_nodes": ["node-id"],
   "current_section": "string | null"
 }
@@ -23,9 +25,9 @@ Field descriptions:
 - `status`: Current session state. One of `in_progress`, `paused`, `complete`, `reviewing`, or `paused_review`.
 - `started_at`: ISO 8601 timestamp when this session was first created.
 - `project_name`: The name of the project being documented. Derived from the repository folder name or the README.
-- `pending_sections`: Ordered list of section names that have not yet been completed. Sections are removed from this list as they are completed.
+- `pending_sections`: Ordered list of business domain objects that have not yet been completed. Each object has: `name` (plain-English domain name), `directories` (array of relative directory paths belonging to this domain), and optionally `cross_cutting: true` (if the domain is pure infrastructure with no business models). Objects are removed from this list as their nodes are completed.
 - `completed_nodes`: List of node `id` values that have been successfully written and validated. Never remove entries from this list.
-- `current_section`: The section currently being worked on, or `null` if between sections.
+- `current_section`: The section currently being worked on (its `name` string), or `null` if between sections.
 
 ---
 
@@ -132,12 +134,16 @@ Always write the complete session.json object — never a partial update. Read t
 
 ## Rule 3 — Managing `pending_sections`
 
-`pending_sections` is the ordered list of section names to document. It is the single source of truth for what work remains.
+`pending_sections` is the ordered list of business domain objects to document. It is the single source of truth for what work remains.
 
-- Populate `pending_sections` during project scanning after identifying logical sections.
-- Write section names as plain strings (e.g., `"Authentication"`, `"Data Model"`, `"API Layer"`).
-- Always work through sections in the order they appear in `pending_sections`.
-- When a node is successfully saved for a section, remove that section's name from `pending_sections` and add the node `id` to `completed_nodes` in the same write operation.
+- Populate `pending_sections` during project scanning (Step 2.3 of `/handoff-start`) after identifying business domains.
+- Write each entry as an object: `{ "name": "<plain-English domain name>", "directories": ["<relative-path/>", ...] }`. Add `"cross_cutting": true` for pure infrastructure domains (no business models of their own). Example:
+  ```json
+  { "name": "Competition Management", "directories": ["competition/"] }
+  { "name": "Cross-Cutting Infrastructure", "directories": ["common/", "services/"], "cross_cutting": true }
+  ```
+- Always work through entries in the order they appear in `pending_sections`.
+- When a node is successfully saved for an entry, remove that entry from `pending_sections` and add the node `id` to `completed_nodes` in the same write operation. Match entries by their `name` field.
 - Never modify `completed_nodes` except to append to it. Never remove or reorder existing entries.
 
 ---
@@ -188,5 +194,5 @@ This algorithm is stateless — no separate cursor or pointer file is needed. Th
 - Do not write `status: "complete"` while `pending_sections` is non-empty.
 - Do not write `status: "in_progress"` after the session is complete without the giver explicitly confirming a fresh start or delta re-run.
 - Do not infer or guess the session state — always read `session.json` first.
-- Do not ask the giver questions to gather documentation content. Infer all node fields autonomously from code signals. Ask a question only when a required field (`business_context`, `code_refs`) cannot be inferred from any available source.
+- Do not ask the giver questions to gather documentation content. Infer all node fields autonomously from code signals. Ask a question only when a required field (`business_context`) cannot be inferred from any available source. Inline snippets are never a reason to ask — omit them if no readable file is found.
 - Do not prompt the giver with WHY questions, confirm/deny section lists, or ask for depth classifications. All of these are determined autonomously.
