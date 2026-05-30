@@ -58,9 +58,9 @@ Use only the following Mermaid types:
 
 Do not use other Mermaid types (`gantt`, `pie`, `gitGraph`, `classDiagram`, etc.) — they are not supported by the extension renderer in this version.
 
-### 2.2 — Element label and `code_refs[].id` naming
+### 2.2 — Diagram element naming
 
-When a diagram element represents a module, class, service, or file that has a corresponding `code_refs` entry, assign a matching `id` to that `code_refs` entry using the following convention:
+Use descriptive, stable labels for diagram elements. Labels should reflect the component's name as it appears in the codebase (class name, module name, service name). Use lowercase-hyphen format for multi-word labels. These labels are for diagram readability only — they are not used for navigation wiring.
 
 - Lowercase all characters
 - Replace spaces and underscores with hyphens
@@ -68,25 +68,13 @@ When a diagram element represents a module, class, service, or file that has a c
 - Maximum 40 characters
 - Examples: `AuthService` → `auth-service`, `UserRepository` → `user-repository`, `payment-gateway` → `payment-gateway`
 
-The `id` you assign to a `code_refs` entry must match exactly the label used for the corresponding element in the diagram source. This is how the extension wires click-to-navigate.
+Example diagram element labels:
 
-Each `id` must be unique within the node's `code_refs` list.
-
-Example:
-
-```yaml
-code_refs:
-  - id: auth-service
-    file: src/auth/service.ts
-    note: Authentication service — handles token issuance and validation
-    line: 1
-  - id: user-repository
-    file: src/users/repository.ts
-    note: User data access layer
-    line: 1
+```mermaid
+flowchart TD
+  auth-service --> user-repository
+  auth-service --> token-store
 ```
-
-Corresponding diagram element labels: `auth-service` and `user-repository`.
 
 ### 2.3 — Diagram block structure
 

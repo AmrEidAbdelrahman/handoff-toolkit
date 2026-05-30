@@ -49,24 +49,147 @@ Read the following in order:
 
 Read file contents only for README and manifest files in this step. Scan names and structure for everything else.
 
-### Step 2.2 — Identify logical sections
+### Step 2.2 — Identify business domains
 
-Based on the scan, identify between 5 and 15 logical sections. Each section corresponds to a major module, service, or functional concern — not individual files.
+Derive business domains from what the code *does*, not from directory names. Apply the following four-signal priority stack:
 
-Apply these naming heuristics:
-- A top-level directory with its own entry point (e.g., `src/auth/index.ts`) → one section named after the directory (e.g., "Authentication")
-- A top-level directory containing only configuration or static assets → merge into a "Configuration" or "Project Setup" section
-- Shared infrastructure directories (`src/lib/`, `src/utils/`, `pkg/common/`) → one "Shared Utilities" or "Core Library" section
-- Infrastructure directories (`deploy/`, `infra/`, `.github/`) → one "Deployment & CI/CD" section unless they contain major logic
-- For very small projects (fewer than 5 meaningful directories): include developer experience sections (local setup, testing strategy, configuration)
+**Signal 1 — README**: Scan for section headings and feature descriptions that name capabilities (e.g., "User Authentication", "Tournament Management"). Extract named capabilities as candidate domain names.
 
-Produce an ordered list of section names. Order them roughly from most fundamental to most peripheral.
+**Signal 2 — Framework app boundaries + models**: For each top-level directory that contains an entry-point file (`__init__.py`, `index.*`, `mod.rs`, `package.json`, `app.py`) or a `models.py` / `models/` directory, treat it as a domain candidate. Read `models.py` or the models directory to understand what business entities it manages. The model names (not the directory name) inform the domain name.
+
+**Signal 3 — Route and URL registrations**: Look for `urls.py`, `routes.*`, `router.*`, `handlers.*`. Group URL paths into the domains they implement (e.g., `/api/users/`, `/api/auth/` → "User Management"; `/api/competitions/` → "Competition Management").
+
+**Signal 4 — Import topology for cross-cutting detection**: For each candidate directory, count how many other directories import from it. If a directory is imported by 3 or more others AND has no business models of its own (only utility functions, base classes, middleware, config loaders) → mark it as **cross-cutting infrastructure**, not a domain.
+
+**Domain naming rule**: Name domains in plain English using business language, not directory names. Derive the name from the models and routes found, not the folder name. Examples:
+- `users/` with `User`, `Profile` models → "User Management" (or "User Profiles & Authentication" if auth logic is present)
+- `competition/` with `Competition`, `Team`, `Match` models → "Competition Management"
+- `social/` with `Follow`, `Post`, `Like` models → "Social Features"
+- `common/` with only helpers, no models → cross-cutting infrastructure
+- For any domain where Signal 1–3 yield no clear name: use the directory name in Title Case as a fallback
+
+**Consolidation**: If two directories clearly implement the same business domain (e.g., `auth/` and `users/` both handle user identity), merge them into a single domain. Record both directory paths for Step 2.3.
+
+**Fallback for very small projects**: If fewer than 3 meaningful domain candidates are found, treat the entire project as a single domain and document it as one node.
+
+The number of domains is determined by the project's natural seams — no fixed target.
 
 ### Step 2.3 — Write pending_sections
 
-Write the identified section names to `pending_sections` in `session.json`. Write the complete session.json object. Do not present this list to the giver for confirmation — proceed immediately.
+Write the identified domain names to `pending_sections` in `session.json`. Each entry is the domain name (plain English). Additionally, record the associated directory paths for each domain so Step 3.2 knows where to read files.
 
-Print a brief status line: "Identified N sections. Documenting autonomously..."
+Use this extended session.json structure for `pending_sections`:
+
+```json
+"pending_sections": [
+  { "name": "User Management", "directories": ["users/", "auth/"] },
+  { "name": "Competition Management", "directories": ["competition/"] },
+  { "name": "Cross-Cutting Infrastructure", "directories": ["common/", "services/"], "cross_cutting": true }
+]
+```
+
+Write the complete session.json object. Do not present this list to the giver for confirmation — proceed immediately.
+
+Print a brief status line: "Identified N business domains. Documenting autonomously..."
+
+---
+
+## Part 2a — Architecture Overview Generation (run once, immediately after Step 2.3)
+
+Run Part 2a before any domain nodes are documented. This produces the first node saved to output.
+
+### Step 2a.1 — Draft the system architecture diagram
+
+Create a `flowchart TD` Mermaid diagram where each node represents one business domain identified in Step 2.2. Use the domain names (not directory names) as node labels. Add directed edges between domains that import from or call each other (infer from the import topology built in Step 2.2, Signal 4). Mark the cross-cutting infrastructure node (if present) with edges from all domains that depend on it.
+
+Apply the element naming convention from `diagram-methodology.md` § 2.2: lowercase-hyphen labels (e.g., `user-management`, `competition-management`).
+
+Run the four-point diagram validation from `diagram-methodology.md` § 2.4 before proceeding.
+
+### Step 2a.2 — Draft the architecture overview node body
+
+Build the following sections:
+
+**`## Business Context`**: 2–4 sentences from the project README and manifests. Describe what the project does, who it serves, and what would break for users if it stopped working.
+
+**`## Technical Context`**: One paragraph summarising the technology stack (language, framework, key libraries, deployment model). Then a `### Domains` subsection with one bullet per business domain: `- **<Domain Name>**: <one-sentence description of the domain's business purpose>`. If a cross-cutting infrastructure node exists, add a `### Cross-Cutting Infrastructure` subsection with one paragraph describing shared utilities.
+
+**`## Diagrams`**: The system architecture diagram from Step 2a.1, using the required H3 + description + fenced mermaid block structure from `diagram-methodology.md` § 2.3.
+
+### Step 2a.3 — Save the architecture overview node
+
+Assemble the complete node file:
+
+```
+---
+id: architecture-overview
+title: Architecture Overview
+depth: core
+schema_version: 1
+diagram_format: mermaid
+generated_at: <current ISO 8601 timestamp>
+inferred_fields:
+  - business_context
+---
+
+<body from Step 2a.2>
+```
+
+1. Write to `.handoff/output/nodes/architecture-overview.md`
+2. Create or update `index.json`: add the architecture overview as position-0 entry:
+   ```json
+   { "id": "architecture-overview", "title": "Architecture Overview", "depth": "core", "dependencies": [], "file": "nodes/architecture-overview.md" }
+   ```
+   If `index.json` does not exist yet, create it with the standard initial structure plus this node.
+3. Print: "✓ Architecture Overview (core)"
+
+---
+
+## Part 2c — Business Document Planning (run once, after Part 2a, before domain node documentation)
+
+Run Part 2c immediately after Part 2a. Business documents are drafted and saved here — before any domain nodes are written. Exception: the Onboarding Guide is saved last (in Part 5c.4) because it references the complete node list.
+
+### Step 2c.1 — Scan for ADR signals
+
+Re-read the files collected during the project scan and check for ADR detection signals as defined in `diagram-methodology.md` § 3.1. For each detected signal:
+- Note which domain it belongs to
+- Draft the ADR title and core decision
+- Record it in a list: `[(domain_name, decision_title), ...]`
+
+### Step 2c.2 — Scan for Runbook signals
+
+Check for Runbook detection signals as defined in `diagram-methodology.md` § 3.2. For each detected signal:
+- Identify the procedure it represents
+- Record it in a list: `[(signal_file, procedure_title), ...]`
+
+### Step 2c.3 — Check for API contract file
+
+Check whether any API contract trigger file exists (defined in `diagram-methodology.md` § 3.4). If found, record it for API Summary generation.
+
+### Step 2c.4 — Draft and save business documents
+
+For each item in your ADR list:
+1. Draft the full ADR using the template in `diagram-methodology.md` § 3.1
+2. Assign id: `<domain-id>-<short-decision-slug>-adr`
+3. Validate against FM-01 through FM-09, OP-06, OP-12 (adr rules)
+4. Write to `.handoff/output/nodes/<id>.md`
+5. Add index entry with `doc_type: "adr"`
+6. Add the document path to `doc_refs` of the architecture overview node (read, update, write back)
+
+For each item in your Runbook list:
+1. Draft the full Runbook using the template in `diagram-methodology.md` § 3.2
+2. Assign id: `<short-procedure-slug>-runbook`
+3. Validate against FM-01 through FM-09, OP-06, OP-12 (runbook rules)
+4. Write to `.handoff/output/nodes/<id>.md`
+5. Add index entry with `doc_type: "runbook"`
+
+If an API contract file was found:
+1. Draft the API Summary using the template in `diagram-methodology.md` § 3.4
+2. Use id: `api-summary`
+3. Write to `.handoff/output/nodes/api-summary.md`
+4. Add index entry with `doc_type: "api_summary"`
+
+**Note**: Do NOT save the Onboarding Guide here. It is saved in Part 5c.4 after all domain nodes are complete.
 
 ---
 
@@ -80,36 +203,26 @@ Write `current_section: "<section name>"` to session.json before starting work o
 
 ### Step 3.2 — Read the relevant files
 
-Identify the entry-point file for this section (e.g., `src/auth/index.ts`, `auth/views.py`, `internal/auth/handler.go`). Then read:
-- The entry-point file (full content if under ~200 lines; first 150 lines if longer)
-- 2–4 additional files that implement the core logic of this section
-- Any configuration or type definition files specific to this section
+Using the directory paths recorded in `pending_sections` for the current domain, identify entry-point files and core logic files across all directories in this domain. For each directory in the domain:
+- Read the entry-point file (e.g., `views.py`, `index.ts`, `handler.go`) — full content if under ~200 lines; first 150 lines if longer
+- Read 1–2 additional files containing the most important business logic for this domain
 
-Limit reading to 8 files total. Prioritise files that reveal how the section works over files that merely use it.
+Limit reading to 8 files total across all directories in the domain. Prioritise files that reveal how the domain's business logic works over files that merely use it. For the cross-cutting infrastructure domain, prioritise reading the most widely-imported utility files.
 
 ### Step 3.3 — Infer `business_context`
 
-Derive the business purpose from these sources, in priority order:
+Use the domain name identified in Step 2.2 as the semantic basis. Derive a 2–4 sentence description of what this domain does for the business, focusing on user-facing value. Do not reference directory names.
 
-1. **README**: Look for sentences that describe what this module/feature does for users or the business. Extract the most relevant sentence or phrase.
-2. **Package/manifest description**: Check `package.json` `description`, `pyproject.toml` `[project] description`, module-level docstrings at the top of the entry-point file.
-3. **Folder name semantics**: Apply these mappings:
-   - `auth/`, `authentication/`, `login/` → "handles user authentication and session management"
-   - `billing/`, `payments/`, `subscriptions/` → "manages billing, payment processing, and subscription lifecycle"
-   - `notifications/`, `emails/` → "sends and manages user notifications"
-   - `api/`, `routes/`, `handlers/` → "exposes the application's HTTP API endpoints"
-   - `db/`, `database/`, `models/`, `schema/` → "defines the data model and manages database interactions"
-   - `workers/`, `jobs/`, `queues/` → "processes background jobs and async tasks"
-   - `admin/` → "provides administrative interfaces and management tools"
-   - `config/`, `settings/` → "manages application configuration and environment settings"
-   - `lib/`, `utils/`, `helpers/` → "provides shared utility functions used across the application"
-   - `tests/`, `__tests__/`, `spec/` → "contains the automated test suite"
-   - For any other name: use the directory name as a plain English phrase (e.g., `recommendations/` → "handles product recommendations")
-4. **Commit message patterns**: Scan git log for recent commits touching this section's files. Look for messages that describe user-facing value (e.g., "add JWT expiry" → authentication section handles token expiry).
+Draw on these sources, in priority order:
 
-Write `business_context` as 2–4 sentences describing: what this section does, why it exists, and what would break for users if it disappeared.
+1. **README**: Look for sentences that describe what this domain's capabilities do for users or the business.
+2. **Model names and docstrings**: The entities managed by this domain (e.g., `Competition`, `Team`, `Match`) directly indicate the business problem being solved. Use model names and their field names to infer business rules.
+3. **Route/endpoint paths and view names**: URL patterns and view class/function names describe the user actions this domain supports.
+4. **Commit message patterns**: Scan git log for recent commits touching this domain's files for user-facing value signals.
 
-If none of the above sources yield usable signal — that is, the README has no description, there is no docstring, the folder name is opaque (e.g., `widgets/`, `misc/`), and commit messages are unhelpful — fall back to Part 6 (minimal-question fallback) for this field only.
+Write `business_context` as 2–4 sentences describing: what business capability this domain provides, why it exists, and what would break for users if it disappeared.
+
+If none of the above sources yield usable signal, fall back to Part 6 (minimal-question fallback) for this field only.
 
 ### Step 3.4 — Infer `depth`
 
@@ -149,14 +262,22 @@ Scan the files read in Step 3.2 for these signals:
 
 For each warning found, write one bullet describing the issue and its location (file + approximate line if known). If no warnings are found, omit the `## Warnings` section entirely from the node.
 
-### Step 3.7 — Determine `code_refs`
+### Step 3.7 — Collect inline code snippets
 
-Identify 1–3 code references for this section:
-1. **Primary ref**: The entry-point file for the section (e.g., `src/auth/index.ts`). Note: "Main entry point — start here to understand this section."
-2. **Secondary ref** (if helpful): The file containing the most important business logic or the largest class/function. Note: a one-line description of what it contains.
-3. **Optional third ref**: A configuration or schema file if it is essential to understanding the section.
+Using the files already read in Step 3.2, identify 1–5 inline code snippets for this domain. Select snippets using this priority order:
 
-Use only files that you have read and confirmed exist. Use forward slashes in all paths. Keep each `note` under 200 characters.
+1. **Public API surface first**: exported functions, class definitions, Django ViewSets, REST framework Views, top-level decorators/annotations. These show what the domain exposes.
+2. **Key business logic methods second**: the methods that implement the domain's core rules — the functions with the most complexity, the most domain-specific names, or the clearest business logic.
+
+For each snippet selected:
+- Record: `file` (path relative to project root), `start_line`, `end_line`, and the literal source lines
+- Apply the line limit: quote 5–15 lines per snippet
+- For functions/classes longer than 15 lines: quote the signature + first 3–5 lines, insert a truncation comment (`# ... (lines X–Y omitted)` or the language equivalent), then optionally quote a meaningful closing statement
+- Use only files you have confirmed exist and read in Step 3.2
+
+If a file serves this domain AND other domains (multi-domain file), still include its most relevant snippet here — it will also appear in the other domain nodes.
+
+Store the collected snippets in memory — they will be embedded in the node body during Step 5.3.
 
 ---
 
@@ -181,51 +302,11 @@ For each optional diagram type applicable to this section category, check the ev
 For each diagram to be generated:
 
 1. Draft the Mermaid source using the correct syntax type from diagram-methodology.md § 2.1
-2. Name each element in the diagram to match the primary components visible in the files read during Part 3
-3. For components that have a corresponding `code_refs` entry, assign a `code_refs[].id` to that entry following the naming convention in diagram-methodology.md § 2.2. Use the same identifier as the diagram element label
-4. Write a one-sentence description for the diagram
-5. Choose a descriptive title (e.g., "Authentication Service Architecture", "User Data Model", "Order Processing Flow")
+2. Name each element in the diagram to match the primary components visible in the files read during Part 3, using the element naming convention from diagram-methodology.md § 2.2 (lowercase-hyphen labels)
+3. Write a one-sentence description for the diagram
+4. Choose a descriptive title (e.g., "Competition Management Architecture", "User Data Model", "Order Processing Flow")
 
 Store the drafted diagram(s) for this section in memory — they will be validated and saved during Part 5b.
-
-### Step 2b.5 — Assign `code_refs[].id` values
-
-For each `code_refs` entry whose corresponding component appears as a named element in a planned diagram, add the `id` field now (before writing the node). Apply the naming rules from diagram-methodology.md § 2.2. Do not add `id` to refs that are not represented in any diagram element.
-
----
-
-## Part 2c — Business Document Planning (run once, after all sections in Part 3 are complete)
-
-After all handover sections have been processed through Part 3 and Part 2b, plan business documents.
-
-### Step 2c.1 — Scan for ADR signals
-
-Re-read the files collected during Part 3 (already in memory) and check for ADR detection signals as defined in diagram-methodology.md § 3.1. For each detected signal:
-- Note which section it belongs to
-- Draft the ADR title and core decision
-- Record it in a list: `[(section_id, decision_title), ...]`
-
-### Step 2c.2 — Scan for Runbook signals
-
-Check for Runbook detection signals as defined in diagram-methodology.md § 3.2. For each detected signal:
-- Identify the procedure it represents
-- Record it in a list: `[(signal_file, procedure_title), ...]`
-
-### Step 2c.3 — Check for API contract file
-
-Check whether any API contract trigger file exists (defined in diagram-methodology.md § 3.4). If found, record it for API Summary generation.
-
-### Step 2c.4 — Draft business documents
-
-For each item in your ADR list, draft the full ADR document using the template in diagram-methodology.md § 3.1.
-
-For each item in your Runbook list, draft the full Runbook document using the template in diagram-methodology.md § 3.2.
-
-If an API contract file was found, draft the API Summary using the template in diagram-methodology.md § 3.4.
-
-Always draft one Onboarding Guide after all other documents are drafted, using the template in diagram-methodology.md § 3.3. The Onboarding Guide references all nodes and documents produced in this session.
-
-Store all drafted documents in memory — they will be saved during Part 5c.
 
 ---
 
@@ -242,12 +323,13 @@ If the command fails with an error indicating the SHA is not in history (e.g., "
 ### Step 4.2 — Map changed files to existing nodes
 
 Read `index.json` to get the current node list. For each changed file from the diff:
-- Check whether the file path appears in any node's `code_refs[].file` values
-- Collect the set of node IDs whose code refs include at least one changed file
+- For nodes with `code_refs`: check whether the file path appears in any node's `code_refs[].file` values
+- For nodes without `code_refs` (feature 003+ style): scan the node's `## Technical Context` body for bold label lines matching the pattern `**\`<path>\`` — if the changed file path appears in any such label, include that node as affected
+- Collect the set of node IDs whose references include at least one changed file
 
-### Step 4.3 — Identify new sections
+### Step 4.3 — Identify new domains
 
-Run Part 2's section identification on the current codebase. Compare the identified sections against the existing nodes in `index.json` (by section name or by entry-point file). Any section not covered by an existing node is a new section.
+Run Part 2's semantic domain discovery (Step 2.2) on the current codebase. Compare the identified domain names against the existing non-business-document nodes in `index.json` (by domain name or by title). Any domain not covered by an existing node is a new domain to document.
 
 ### Step 4.4 — Process affected and new sections
 
@@ -274,13 +356,13 @@ For each section processed in Part 3 (or Part 4 for delta re-runs), save the nod
 
 ### Step 5.1 — Determine node id
 
-Derive the `id` from the section name:
+Derive the `id` from the **business domain name** (the plain English name from `pending_sections`, not the directory name):
 - Lowercase all characters
-- Replace spaces with hyphens
+- Replace spaces, ampersands (`&`), and underscores with hyphens
 - Remove any characters that are not lowercase letters, digits, or hyphens
 - Truncate to 60 characters maximum
 
-Example: "API Layer" → `api-layer`, "Authentication & Sessions" → `authentication-sessions`.
+Examples: "User Management" → `user-management`, "Competition Management" → `competition-management`, "Social Features" → `social-features`, "Cross-Cutting Infrastructure" → `cross-cutting-infrastructure`.
 
 ### Step 5.2 — Populate `inferred_fields`
 
@@ -302,13 +384,9 @@ Build the complete node file content with YAML frontmatter and Markdown body:
 ```
 ---
 id: <id>
-title: <section name>
+title: <domain name>
 depth: <core | supporting | peripheral>
 schema_version: 1
-code_refs:
-  - file: <path>
-    note: <description>
-  [additional refs if applicable]
 generated_at: <current ISO 8601 timestamp>
 inferred_fields:
   - business_context
@@ -325,6 +403,15 @@ inferred_fields:
 
 <Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points>
 
+<For each inline snippet collected in Step 3.7, insert immediately after the narrative paragraphs:>
+
+**`<relative/path/to/file.ext>` lines N–M**
+```<language>
+<quoted source lines, truncated with omission comment if needed>
+```
+
+<Repeat for each snippet — 1 to 5 snippets total>
+
 ## Decisions
 
 <Bulleted list of decisions — omit section entirely if no decisions found>
@@ -333,6 +420,8 @@ inferred_fields:
 
 <Bulleted list of warnings — omit section entirely if no warnings found>
 ```
+
+The bold label line (`**\`path\` lines N–M**`) must appear on the line immediately before the opening fence with no blank line between them.
 
 ### Step 5b — Validate and attach diagrams
 
@@ -353,11 +442,16 @@ Run this step before Step 5.4. It is part of node assembly.
 
 ### Step 5.4 — Validate the node
 
-Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the assembled content. Check all applicable rules: FM-01 through FM-09, CR-01 through CR-05, OP-01 through OP-05, OP-06 through OP-12 (new rules from feature 002), BD-01 through BD-09 (for `handover_node` type only).
+Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the assembled content:
+- **Always check**: FM-01 through FM-08, OP-01 through OP-09, OP-12, BD-01 through BD-09 (for `handover_node` type only)
+- **FM-09** is now optional — absence of `code_refs` is valid; skip FM-09 check if `code_refs` is absent
+- **CR-01 through CR-05** apply only if `code_refs` is present; skip these checks if `code_refs` is absent
+- **OP-10 and OP-11** are deprecated — skip
+- **OP-13** is advisory — if `depth` is `core` or `supporting` and `## Technical Context` is present but has no inline snippet, log: "Advisory (OP-13): Technical Context has no inline snippets" but do NOT fail validation
 
-**If all rules pass**: proceed to Step 5.5.
+**If all mandatory rules pass**: proceed to Step 5.5.
 
-**If any rules fail**: fix each issue without asking the giver. Re-validate until the node passes. Only ask the giver if a required field genuinely cannot be provided without human input (apply Part 6).
+**If any mandatory rules fail**: fix each issue without asking the giver. Re-validate until the node passes. Only ask the giver if a required field genuinely cannot be provided without human input (apply Part 6).
 
 ### Step 5.5 — Write the node file
 
@@ -455,30 +549,35 @@ The Onboarding Guide must reference all nodes and documents now in `index.json`.
 
 ### Step 5c.5 — Final index sort
 
-After all business documents are added, re-sort `index.json` `nodes` array: core → supporting → peripheral. Within each depth group, handover nodes come before business documents (in insertion order within each sub-group). Write the final `index.json`.
+After all documents are complete, sort the `index.json` `nodes` array using this strict ordering:
+
+1. `architecture-overview` node — always position 0
+2. ADR nodes (`doc_type: "adr"`) — in detection order
+3. Onboarding Guide node (`doc_type: "onboarding_guide"`)
+4. Runbook nodes (`doc_type: "runbook"`) — in detection order
+5. API Summary node (`doc_type: "api_summary"`) — if present
+6. Domain nodes (no doc_type or `doc_type: "handover_node"`) sorted: `core` first → `supporting` → `peripheral`
+
+Write the final `index.json`.
 
 ---
 
 ## Part 6 — Minimal-Question Fallback
 
-Invoke Part 6 only when a required field (`business_context` or `code_refs`) truly cannot be inferred from any available source after exhausting all inference steps.
+Invoke Part 6 only when `business_context` truly cannot be inferred from any available source after exhausting all inference steps in Step 3.3.
 
 ### When to invoke
 
-- `business_context`: all sources in Step 3.3 yielded no usable signal (no README, no docstring, folder name is opaque, no relevant commit messages)
-- `code_refs`: no entry-point file can be identified (no `index.*`, no `main.*`, no file matching the section name pattern), and reading the directory listing does not reveal an obvious starting file
+- `business_context`: all sources in Step 3.3 yielded no usable signal (no README description, no model names that clarify the domain, no meaningful route/view names, no relevant commit messages)
 
-Never invoke Part 6 for `depth`, `decisions`, or `warnings` — these optional or heuristic fields always have a fallback (use `supporting` for depth; omit the section for decisions/warnings).
+Never invoke Part 6 for `depth`, `decisions`, `warnings`, or inline snippets — these fields always have a fallback (`supporting` for depth; omit the section for decisions/warnings; omit snippets if no readable file found).
 
 ### What to ask
 
-Ask exactly one focused question per missing field. Use this phrasing:
+Ask exactly one focused question per domain. Use this phrasing:
 
 For `business_context`:
-> "I couldn't determine the business purpose of `<section name>` from the code. In one sentence: what does this module do for the business or for users?"
-
-For `code_refs`:
-> "I couldn't identify the main entry point for `<section name>`. What file should a new developer open first to understand this section? (Give the path relative to the project root.)"
+> "I couldn't determine the business purpose of the `<domain name>` domain from the code. In one sentence: what does this part of the system do for the business or for users?"
 
 ### After receiving an answer
 
@@ -500,6 +599,40 @@ Run: `git rev-parse HEAD`
 If the command succeeds: read the 40-character hex SHA. Update `index.json` by adding `"generated_at_sha": "<sha>"` and setting `"generated_at"` to the current ISO 8601 timestamp. Write `index.json`.
 
 If the command fails (no git history or not in a git repo): omit `generated_at_sha` from `index.json`. Note to the giver: "Could not record a git SHA — the project may not have any commits yet."
+
+### Step 7.1b — Generate index.md
+
+1. Read the final `index.json`
+2. Build **`## Business Overview`** section: for each node in the ordering position 1–5 (architecture-overview, ADRs, Onboarding Guide, Runbooks, API Summary), write a Markdown link: `- [<title>](nodes/<id>.md)`
+3. Build **`## Domain Reference`** section with three subsections. For each domain node (doc_type absent or `handover_node`) in the appropriate depth group, write: `- [<title>](nodes/<id>.md) — <first sentence of the node's business_context section>` (read the node file to extract the first sentence)
+   - `### Core Domains` — all `depth: core` domain nodes
+   - `### Supporting Domains` — all `depth: supporting` domain nodes
+   - `### Peripheral / Infrastructure` — all `depth: peripheral` domain nodes; include the cross-cutting node here if present
+4. Write the complete file to `.handoff/output/index.md`:
+
+```markdown
+# <project_name from session.json> — Handoff Index
+
+Generated: <current ISO 8601 timestamp>
+
+## Business Overview
+
+- [Architecture Overview](nodes/architecture-overview.md)
+[... links to ADRs, Onboarding Guide, Runbooks, API Summary ...]
+
+## Domain Reference
+
+### Core Domains
+[... links ...]
+
+### Supporting Domains
+[... links ...]
+
+### Peripheral / Infrastructure
+[... links ...]
+```
+
+5. Print: "✓ index.md written"
 
 ### Step 7.2 — Write session complete
 
