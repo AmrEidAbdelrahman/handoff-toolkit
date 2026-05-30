@@ -600,13 +600,15 @@ Never fabricate a source; use `(src: inferred)` for genuine inferences.
 
 **Quality pass (Part 5d)**: Run the quality refinement pass on each business document. `snippet_relevance` is N/A for all business document types — omit that key. Score the remaining four dimensions, rewrite any scoring 0, and write the final `quality_score` into the document's frontmatter.
 
+> **Note**: The document templates in `diagram-methodology.md` §3.1–3.4 do NOT include a `quality_score` field — you MUST inject it into the frontmatter here, after the quality pass, before saving. The per-type validation in Steps 5c.1–5c.4 checks OP-14, so a business document saved without a valid `quality_score` will fail validation.
+
 Business documents generally carry no `inferred_fields` (they are drafted from explicit signals), so `confidence_tags` is usually absent for them. If a document does include an inferred field, tag it per the Step 5.2 rules.
 
 ### Step 5c.1 — Save ADR documents
 
 For each ADR drafted in Part 2c:
 
-1. Apply FM-01 through FM-09 and OP-06 and OP-12 (adr rules) from `output-schema.md` to validate the document
+1. Apply FM-01 through FM-09, OP-06, OP-12 (adr rules), and OP-14 (`quality_score` present, all values 1 or 2) from `output-schema.md` to validate the document
 2. Assign a node `id` following the naming convention: `<section-id>-<short-decision-slug>-adr` (e.g., `auth-jwt-strategy-adr`)
 3. Write the document to `.handoff/output/nodes/<id>.md`
 4. Add an index entry with `doc_type: "adr"`:
@@ -619,7 +621,7 @@ For each ADR drafted in Part 2c:
 
 For each Runbook drafted in Part 2c:
 
-1. Validate against FM-01 through FM-09, OP-06, and OP-12 (runbook rules)
+1. Validate against FM-01 through FM-09, OP-06, OP-12 (runbook rules), and OP-14 (`quality_score` present, all values 1 or 2)
 2. Assign a node `id` following the naming convention: `<short-procedure-slug>-runbook` (e.g., `local-dev-setup-runbook`)
 3. Write the document to `.handoff/output/nodes/<id>.md`
 4. Add an index entry with `doc_type: "runbook"`:
@@ -632,7 +634,7 @@ For each Runbook drafted in Part 2c:
 
 If an API Summary was drafted in Part 2c:
 
-1. Validate against FM-01 through FM-09, OP-06, and OP-12 (api_summary rules)
+1. Validate against FM-01 through FM-09, OP-06, OP-12 (api_summary rules), and OP-14 (`quality_score` present, all values 1 or 2)
 2. Use `id: api-summary`; write to `.handoff/output/nodes/api-summary.md`
 3. Add index entry with `doc_type: "api_summary"`
 
@@ -643,7 +645,7 @@ The Onboarding Guide must reference all nodes and documents now in `index.json`.
 1. Build `## Reading Order` from the `index.json` nodes array (core first, then supporting, then peripheral); exclude ADRs, Runbooks, and other business document types from this list
 2. Build `## Related Documents` from all ADR and Runbook entries added to `index.json`
 3. Write `## Project Summary` as a paragraph derived from the project's README and the core nodes' business contexts
-4. Validate against FM-01 through FM-09, OP-06, and OP-12 (onboarding_guide rules)
+4. Validate against FM-01 through FM-09, OP-06, OP-12 (onboarding_guide rules), and OP-14 (`quality_score` present, all values 1 or 2)
 5. Write to `.handoff/output/nodes/onboarding-guide.md` (overwrite if it exists from a previous run)
 6. Add index entry with `doc_type: "onboarding_guide"` if not already present; update if it exists
 
