@@ -150,7 +150,7 @@ Build the following sections:
 
 **`## Business Context`**: 2–4 sentences from the project README and manifests. Describe what the project does, who it serves, and what would break for users if it stopped working.
 
-**`## Technical Context`**: One paragraph summarising the technology stack (language, framework, key libraries, deployment model). Then a `### Domains` subsection with one bullet per business domain: `- **<Domain Name>**: <one-sentence description of the domain's business purpose>`. If a cross-cutting infrastructure node exists, add a `### Cross-Cutting Infrastructure` subsection with one paragraph describing shared utilities.
+**`## Technical Context`**: Open with a `**TL;DR:** <1–2 sentences>` lead (US3 — same as Step 5.3; the architecture overview is assembled here, not via Step 5.3, so the TL;DR must be added in this step). The TL;DR abstracts the whole system technically (stack + how the domains fit together) and is citation-exempt. Then one paragraph summarising the technology stack (language, framework, key libraries, deployment model). Then a `### Domains` subsection with one bullet per business domain: `- **<Domain Name>**: <one-sentence description of the domain's business purpose>`. If a cross-cutting infrastructure node exists, add a `### Cross-Cutting Infrastructure` subsection with one paragraph describing shared utilities. If the architecture overview frontmatter has `doc_refs` (e.g., ADRs linked to it), add a `### Related` subsection with `- [<title>](<id>.md) — <one-line why related>` links (US4); omit if no doc_refs.
 
 **`## Diagrams`**: The system architecture diagram from Step 2a.1, using the required H3 + description + fenced mermaid block structure from `diagram-methodology.md` § 2.3.
 
@@ -466,7 +466,7 @@ If the command fails with an error indicating the SHA is not in history (e.g., "
 
 Read `index.json` to get the current node list. For each changed file from the diff:
 - For nodes with `code_refs`: check whether the file path appears in any node's `code_refs[].file` values
-- For nodes without `code_refs` (feature 003+ style): scan the node's `## Technical Context` body for bold label lines matching the pattern `**\`<path>\`` — if the changed file path appears in any such label, include that node as affected
+- For nodes without `code_refs` (feature 003+ style): scan the node's `## Technical Context` body for snippet label lines and extract the `<path>` from each. Labels appear in TWO forms — match both: the plain form `**\`<path>\` lines N–M**` and the feature-006 permalink form `**[\`<path>\` lines N–M](<url>)**` (note the `[` between `**` and the backtick). If the changed file path appears in any such label (either form), include that node as affected
 - Collect the set of node IDs whose references include at least one changed file
 
 ### Step 4.3 — Identify new domains
