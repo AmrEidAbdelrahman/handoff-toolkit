@@ -138,6 +138,36 @@ After drafting a diagram, self-validate the Mermaid source before saving:
 
 Do not leave broken Mermaid source in a node. Either it renders correctly or it is replaced with prose.
 
+### 2.5 — Critical-flow sequence diagrams (architecture overview)
+
+The architecture overview node carries 1–3 **critical-flow** `sequenceDiagram`s that trace the system's core user journeys end to end, ACROSS domain boundaries. These are different from the per-section optional sequence diagrams: they are deliberately cross-cutting, and they are the single most illuminating artifact in a handover.
+
+Authoring rules:
+- **Trace from the entry point**: start at a request entry point (an HTTP route/handler, CLI command, or job trigger) and follow the call path — entry → service / business logic → data layer (model) → external dependency (if any) → response.
+- **Cross domains**: each diagram should pass through at least two business domains (e.g., a route in one domain calling a service that writes a model in another and calls an external gateway).
+- **Participants**: use lowercase-hyphen labels (§ 2.2) for participants, named after the real components (e.g., `orders-route`, `order-service`, `order-model`, `payment-gateway`). Cap at ~8 participants; if the real flow has more hops, trace the principal ones and summarise the rest in the description sentence.
+- **One sentence names the journey**: the H3 description line names the user journey in plain language (e.g., "User places an order", "A new member signs up and is added to a competition"). This description lives in `## Diagrams` and is **citation-exempt** — do not append `(src: …)`.
+- **Arrows**: use `->>` for calls and `-->>` for returns.
+
+Example:
+
+```mermaid
+sequenceDiagram
+  participant client as client
+  participant route as orders-route
+  participant service as order-service
+  participant model as order-model
+  participant gateway as payment-gateway
+  client->>route: POST /orders
+  route->>service: create_order(payload)
+  service->>model: persist(order)
+  service->>gateway: charge(amount)
+  gateway-->>service: receipt
+  service-->>client: 201 Created
+```
+
+If no end-to-end flow is discernible (e.g., a pure library with no request entry points), produce no critical-flow diagrams — do not force one.
+
 ---
 
 ## Part 3 — Business Document Catalogue

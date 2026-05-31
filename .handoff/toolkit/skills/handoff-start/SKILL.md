@@ -33,6 +33,16 @@ Attempt to read `.handoff/session.json`. Determine which case applies per sessio
 
 Do not proceed past Step 1.2 until session state is resolved and written to disk.
 
+### Step 1.3 — Capture git context (for permalinks, SHA, and risk analysis)
+
+Capture the git context ONCE here, at session start, so it is available to snippet permalinks (Step 5.3) and the git-history analysis (Part 2d). Store all of the following in memory for the session:
+
+1. **`git_available`**: run `git rev-parse HEAD`. If it fails (no git, no commits), set `git_available = false` and skip the rest of this step — all git-derived output (permalinks, recorded SHA, Part 2d hotspot/ownership/tribal) is then skipped gracefully throughout the session. If it succeeds, set `git_available = true` and store the 40-char SHA as `generated_at_sha`.
+2. **`repo_blob_base` + `repo_host_style`**: run `git remote get-url origin`. Normalise to `https://<host>/<owner>/<repo>` (strip a trailing `.git`; convert SSH `git@<host>:<owner>/<repo>` to the https form). If the host contains `gitlab`, set `repo_host_style = gitlab`; if it is a GitHub host, set `repo_host_style = github`; otherwise `unknown`. If there is no remote, leave `repo_blob_base` unset.
+3. **`dirty_tracked_paths`**: run `git status --porcelain` and collect the set of paths whose status is a **tracked** change (staged or modified — i.e., the line does NOT begin with `??`). **Exclude untracked (`??`) entries.** This set is used per-file in Step 5.3: a snippet permalink is only unsafe if that snippet's own file is in this set. (Untracked unrelated files — e.g., the toolkit install itself — must NOT disable permalinks for clean tracked source files.)
+
+Print nothing unless `git_available` is false, in which case note: "No git history — git-derived insights (permalinks, fragility, ownership, history notes) will be skipped."
+
 ---
 
 ## Part 2 — Autonomous Project Scan
@@ -94,6 +104,34 @@ Print a brief status line: "Identified N business domains. Documenting autonomou
 
 ---
 
+## Part 2d — Git History Analysis (run once, immediately after Step 2.3, before Part 2a)
+
+Run Part 2d exactly once per fresh session and at the start of a delta re-run (Part 4). **If `git_available` is false (Step 1.3), skip Part 2d entirely** — all consumers (hotspot warnings, ownership notes, tribal-knowledge warnings) then produce nothing, with no error. Compute the three result sets below and store them in memory, grouped by domain using the `directories` recorded in `pending_sections`.
+
+### Step 2d.1 — Churn / hotspot ranking (feeds Step 3.6 warnings)
+
+1. Aggregate churn: `git log --format= --name-only | sort | uniq -c | sort -rn` — this gives commit-count-per-file across history. Down-weight or drop files authored predominantly by detectable bots/automation (names containing `bot`, `[bot]`, `dependabot`, `github-actions`).
+2. For each high-churn file, estimate a **complexity proxy** from signals already used by the warning heuristics (file length, function length, nesting depth) — read the file if it is a plausible hotspot.
+3. Mark a file **fragile** only when churn is high AND complexity is above the triviality floor. The **triviality floor excludes** changelogs, version files, lockfiles, generated files, and config-only files even when they top the churn list (e.g., `CHANGELOG.md`, `VERSION`, `package-lock.json` are high-churn but trivial — never flag them).
+4. Group fragile files by the domain that owns them. Store `{path, churn, domain}` per fragile file.
+
+### Step 2d.2 — Ownership / bus-factor (feeds Step 5.3 `### Ownership`)
+
+1. Per domain, find the dominant author over the domain's directories: `git shortlog -sn HEAD -- <domain paths>` (use the explicit `HEAD` argument — `git shortlog -sn` alone may read nothing in a non-interactive shell). Fallback if needed: `git log --format='%an' -- <paths> | sort | uniq -c | sort -rn`.
+2. Flag **single-author files** (bus-factor 1): a file where `git log --format='%an' -- <file> | sort -u` yields exactly one distinct author.
+3. If a `CODEOWNERS` file exists (root, `.github/`, or `docs/`), parse the declared owner(s) for each domain's paths.
+4. Store per domain: `de_facto_owner` (+ commit count), `codeowners_owner` (if any), `single_author_files` list.
+
+### Step 2d.3 — Tribal-knowledge mining (feeds Step 3.6 warnings)
+
+1. Find candidate commits: `git log -i --grep='revert\|hotfix\|workaround\|don'\''t\|careful\|gotcha' --oneline` (case-insensitive). Prefer commits where the keyword leads the message, and `revert`/`hotfix` commit patterns, over incidental mid-message mentions.
+2. For each candidate, determine the files it touched (`git show --name-only --format= <sha>`) and map them to domains.
+3. Record `{sha7, keyword, lesson (one-line summary of the message), domain}`. **Deduplicate** by (lesson, file) and **cap at 3–5 per domain** — keep the most significant; do not emit a wall of near-identical bullets.
+
+Store all three result sets in memory for consumption by Step 3.6 (hotspot + tribal warnings) and Step 5.3 (`### Ownership`).
+
+---
+
 ## Part 2a — Architecture Overview Generation (run once, immediately after Step 2.3)
 
 Run Part 2a before any domain nodes are documented. This produces the first node saved to output.
@@ -116,13 +154,24 @@ Build the following sections:
 
 **`## Diagrams`**: The system architecture diagram from Step 2a.1, using the required H3 + description + fenced mermaid block structure from `diagram-methodology.md` § 2.3.
 
+### Step 2a.2b — Trace critical flows into the `## Diagrams` section
+
+Run this step BEFORE Step 2a.3 (the architecture overview must contain the flow diagrams before it is scored and saved). It adds 1–3 cross-domain critical-flow sequence diagrams to the `## Diagrams` section drafted in Step 2a.2.
+
+1. **Pick the top entry points**: identify the project's principal request entry points — the busiest/most central routes or URL patterns, top-level CLI commands, or job triggers. Choose 1–3 that represent the system's core user journeys (e.g., sign-up, the primary create/transaction flow, a key read flow).
+2. **Trace each flow**: for each chosen entry point, read the entry-point file and follow the call path — the handler/view it maps to, the service or business-logic function that handler calls, the model(s) it reads/writes, and any external client it invokes. These are lightweight targeted reads, independent of the per-domain reads in Part 3.
+3. **Draft one `sequenceDiagram` per flow** following `diagram-methodology.md` § 2.5: cross at least two domains, lowercase-hyphen participant labels, ≤ ~8 participants, `->>` calls / `-->>` returns, and a one-sentence H3 description naming the user journey. Run the § 2.4 diagram validation on each.
+4. Append these diagram blocks to the overview's `## Diagrams` section, after the system architecture diagram.
+
+If no end-to-end flow is discernible (e.g., a pure library with no request entry points), add no critical-flow diagrams and continue. The description lines live in `## Diagrams` and are citation-exempt.
+
 ### Step 2a.3 — Save the architecture overview node
 
 First, apply citations and tags to the body drafted in Step 2a.2:
 - Every sentence in the `## Business Context` section must carry a trailing `(src: …)` citation (same convention as Step 5.3 — `README §<heading>`, `<relative-path>:<line>`, `commit <sha7>`, or `inferred`). The `### Domains` bullets under `## Technical Context` do not require citations.
 - Assign `confidence_tags` for `business_context` using the Step 5.2 rules (`high` if drawn from an explicit README description; `medium` if drawn from the set of model/route names; `low` if only from directory names). Honour the three-way link rule: a `business_context` resting on `(src: inferred)` is `low`.
 
-Then run the **quality refinement pass (Part 5d)** on this node: read the rubric, score the applicable dimensions (`snippet_relevance` is N/A — the architecture overview has no inline snippets), rewrite any dimension scoring 0, and record the final `quality_score`.
+Then run the **quality refinement pass (Part 5d)** on this node: read the rubric, score the applicable dimensions (`snippet_relevance` is N/A — the architecture overview has no inline snippets), rewrite any dimension scoring 0, and record the final `quality_score`. The body scored here includes the critical-flow diagrams added in Step 2a.2b. Note: the diagram description lines in `## Diagrams` (system diagram and critical-flow diagrams) are citation-exempt — do not add `(src: …)` to them.
 
 Assemble the complete node file:
 
@@ -318,6 +367,13 @@ For each warning found, write one bullet describing the issue and its location (
 
 **Record the source signal for each warning bullet (for citations).** Most warnings have a concrete location — cite it as `<relative-path>:<line>` (e.g., the line of the `TODO`/`FIXME` comment, or the start line of an over-long function). Use the same four forms as Step 3.3. A warning that is a general observation with no specific line is `inferred`. Keep each bullet's signal in memory for rendering in Step 5.3.
 
+**Add git-derived warnings from Part 2d (skip if `git_available` is false).** Consult the Part 2d result sets for this domain and append two kinds of warning bullets:
+
+- **Fragile-file (hotspot) bullets** from Step 2d.1 — for each fragile file owned by this domain: `Fragile — change carefully: \`<path>\` (<churn> commits, high complexity) (src: <commit range or inferred>)`. These are the high-churn-high-complexity files; trivial high-churn files were already excluded in Part 2d.
+- **Tribal-knowledge bullets** from Step 2d.3 — for each retained item for this domain: the one-line lesson with a commit citation: `<lesson> (src: commit <sha7>)` (Step 5.3 upgrades this to a clickable commit permalink when a host is known).
+
+If this domain has no fragile files and no tribal items, add nothing. These git-derived bullets are inferences — `warnings` therefore stays in `inferred_fields` with its confidence tag (the warning is `low`/`medium` per the strength of the git signal).
+
 ### Step 3.7 — Collect inline code snippets
 
 Using the files already read in Step 3.2, identify 1–5 inline code snippets for this domain. Select snippets using this priority order:
@@ -400,9 +456,11 @@ Run Part 4 only when `index.json` has a `generated_at_sha` (Case C resume). For 
 
 ### Step 4.1 — Compute the diff
 
-Run: `git diff --name-only <generated_at_sha> HEAD`
+First, capture the git context for this run by running **Step 1.3** (it may not have run if the session jumped straight to delta mode): refresh `generated_at_sha` to current HEAD, `repo_blob_base`, `repo_host_style`, and `dirty_tracked_paths`. Then run **Part 2d (Git History Analysis)** so the hotspot/ownership/tribal result sets are fresh for the re-run — affected and new nodes consume them in Step 4.4. (Skip Part 2d if `git_available` is false.)
 
-If the command fails with an error indicating the SHA is not in history (e.g., "unknown revision", "not a valid object name"): print "SHA not found in history — performing full regeneration" and treat this as a fresh scan (run Part 2 then Part 3 for all sections).
+Then run: `git diff --name-only <generated_at_sha-from-index.json> HEAD`
+
+If the command fails with an error indicating the SHA is not in history (e.g., "unknown revision", "not a valid object name"): print "SHA not found in history — performing full regeneration" and treat this as a fresh scan (run Part 2, Part 2d, then Part 3 for all sections).
 
 ### Step 4.2 — Map changed files to existing nodes
 
@@ -418,12 +476,12 @@ Run Part 2's semantic domain discovery (Step 2.2) on the current codebase. Compa
 ### Step 4.4 — Process affected and new sections
 
 For affected existing nodes:
-- Re-run Part 3 (Steps 3.2 through 3.7) for each affected node to re-infer all fields
+- Re-run **all per-domain Part 3 steps** (every Step 3.x — currently 3.2 read, 3.3 business_context, 3.4 depth, 3.5 decisions, 3.6 warnings incl. the Part 2d hotspot/tribal bullets, 3.7 snippets, 3.8 dependencies, 3.9 tests) for each affected node to re-infer all fields. (Stated as "all Part 3 steps" rather than a fixed number range so new steps added by future features are not silently skipped.)
 - Reset `inferred_fields` to the newly inferred list (as if documenting from scratch)
 - Overwrite the node file with the updated content
 
 For new sections:
-- Run Part 3 (Steps 3.2 through 3.7) as for a fresh session
+- Run **all per-domain Part 3 steps** as for a fresh session
 - Create new node files and add entries to `index.json`
 
 Leave all unaffected nodes completely untouched — do not re-read, re-infer, or overwrite them.
@@ -509,11 +567,13 @@ quality_score:   # values filled in by Part 5d after assembly — leave as place
 
 ## Technical Context
 
+**TL;DR:** <1–2 sentences abstracting the whole section — what this domain does technically and how it hangs together. Must NOT duplicate the first detail sentence. Citation-exempt (Technical Context narrative).>
+
 <Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points. NO citations on narrative paragraphs. For data-layer domains, the prose ALSO lists foreign keys, unique constraints, and notable indexes, and references schema-shaping migrations (from Step 3.2) — these are factual transcriptions and are NOT cited; any inferred commentary on a field's business meaning IS cited.>
 
-<For each inline snippet collected in Step 3.7, insert immediately after the narrative paragraphs:>
+<For each inline snippet collected in Step 3.7, insert immediately after the narrative paragraphs. The bold label is a clickable permalink when safe (see "Snippet permalinks" below), otherwise the plain label:>
 
-**`<relative/path/to/file.ext>` lines N–M**
+**[`<relative/path/to/file.ext>` lines N–M](<permalink>)**
 ```<language>
 <quoted source lines, truncated with omission comment if needed>
 ```
@@ -537,6 +597,20 @@ quality_score:   # values filled in by Part 5d after assembly — leave as place
 <If no tests cover this domain, the Testing subsection contains the single line:>
 - No tests found covering this domain.
 
+<If the node has dependencies or doc_refs, insert this H3 subsection — omit if both empty:>
+
+### Related
+
+- [<related node title>](<related-id>.md) — <one-line why related>
+
+<If Part 2d produced ownership data for this domain (git_available), insert this H3 subsection — omit entirely if no git data and no CODEOWNERS:>
+
+### Ownership
+
+- De facto owner: <author> (<n> commits) (src: inferred from git shortlog)
+- Declared owner (CODEOWNERS): <owner>            <!-- only if a CODEOWNERS entry covers this domain -->
+- Single-author files (bus-factor 1): `<path>`, `<path>`
+
 ## Decisions
 
 <Bulleted list of decisions — each bullet ends with a citation. Omit section entirely if no decisions found>
@@ -546,7 +620,18 @@ quality_score:   # values filled in by Part 5d after assembly — leave as place
 <Bulleted list of warnings — each bullet ends with a citation. Omit section entirely if no warnings found>
 ```
 
-The bold label line (`**\`path\` lines N–M**`) must appear on the line immediately before the opening fence with no blank line between them.
+The bold label line must appear on the line immediately before the opening fence with no blank line between them.
+
+**Snippet permalinks (US4)**: render each snippet's bold label as a clickable permalink to the exact lines at the recorded commit, when ALL of these hold: `git_available` is true; `repo_blob_base` is known; `repo_host_style` is `github` or `gitlab`; AND the snippet's own file is NOT in `dirty_tracked_paths` (Step 1.3). Build the URL:
+- GitHub: `<repo_blob_base>/blob/<generated_at_sha>/<path>#L<N>-L<M>`
+- GitLab: `<repo_blob_base>/-/blob/<generated_at_sha>/<path>#L<N>-<M>`
+- Rendered label: `**[`<path>` lines N–M](<url>)**`
+
+Otherwise — no host, unsupported host style, no SHA, OR this file has uncommitted tracked changes (would link to the wrong lines) — fall back to the plain label `**`<path>` lines N–M**` with no link. The snippet label IS the citation; do not add a separate `(src: …)`.
+
+**`### Related` subsection (US4)**: build from the node's `dependencies` and `doc_refs`. For each, render `- [<related node title>](<related-id>.md) — <one-line why related>` (read the related node's title from its frontmatter; the link target is the node filename `<id>.md`). Omit the whole subsection if the node has neither dependencies nor doc_refs. These are structural links — no citation.
+
+**`### Ownership` subsection (US5)**: render from the Part 2d Step 2d.2 ownership data for this domain. The de facto owner line carries `(src: inferred from git shortlog)`; the CODEOWNERS line (only if a CODEOWNERS entry covers this domain) is factual. Omit the whole subsection when `git_available` is false AND no CODEOWNERS entry applies. The de-facto-owner and bus-factor flags are git-derived inferences — they keep `warnings`/ownership reasoning honest, but ownership lives in this subsection (not Warnings) to avoid duplication.
 
 **`confidence_tags`**: Include one entry per field in `inferred_fields`, using the levels assigned in Step 5.2. Do not include entries for fields not in `inferred_fields`.
 
@@ -808,11 +893,11 @@ Run Part 7 when `pending_sections` is empty and all nodes are saved.
 
 ### Step 7.1 — Record the git SHA
 
-Run: `git rev-parse HEAD`
+Use the `generated_at_sha` captured at session start in Step 1.3 (do NOT re-run `git rev-parse HEAD` here — the SHA recorded must be the one the snippets and permalinks were rendered against). Update `index.json` by adding `"generated_at_sha": "<generated_at_sha>"` and setting `"generated_at"` to the current ISO 8601 timestamp. Write `index.json`.
 
-If the command succeeds: read the 40-character hex SHA. Update `index.json` by adding `"generated_at_sha": "<sha>"` and setting `"generated_at"` to the current ISO 8601 timestamp. Write `index.json`.
+If `git_available` was false at Step 1.3 (no git history or not in a git repo): omit `generated_at_sha` from `index.json`. Note to the giver: "Could not record a git SHA — the project may not have any commits yet."
 
-If the command fails (no git history or not in a git repo): omit `generated_at_sha` from `index.json`. Note to the giver: "Could not record a git SHA — the project may not have any commits yet."
+(If HEAD happened to move during the run, prefer the Step 1.3 value — that is the commit the documented snippets were read at.)
 
 ### Step 7.1b — Generate index.md
 
