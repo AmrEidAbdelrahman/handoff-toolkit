@@ -179,6 +179,35 @@ Check for Runbook detection signals as defined in `diagram-methodology.md` § 3.
 
 Check whether any API contract trigger file exists (defined in `diagram-methodology.md` § 3.4). If found, record it for API Summary generation.
 
+### Step 2c.3a — Scan for environment variables (Config Reference)
+
+Mine every environment variable the project reads. Sources, merged by variable name:
+1. **In-code reads**: `process.env.X`, `os.environ['X']` / `os.environ.get('X')` / `os.getenv('X')`, framework settings accessors (`settings.X`, `env('X')`, `config('X')`).
+2. **`.env.example` / `.env.sample` / `.env.template`** files — names and example values.
+3. **Settings/config files** that read environment variables (`settings.py`, `config/*.py`, `config.*.js`, etc.).
+4. **`docker-compose.yml` / `docker-compose.*.yml`** `environment:` blocks.
+
+For each variable, record:
+- `name`
+- `purpose` — a one-line description with its source signal (the file:line where it is read, or `inferred`)
+- `required` — `optional` if a default exists (code default like `os.getenv('X', default)`, `||` fallback, or a value in `.env.example`); otherwise `required`
+- `default` — the default value, or `none`
+- `domains` — the consuming domain name(s), mapped via the `pending_sections` directory map
+- `sensitive` — `yes` if the name contains `SECRET`, `KEY`, `PASSWORD`, `PASS`, `TOKEN`, `CREDENTIAL`, or `PRIVATE`; else `no`
+
+**Secret safety**: for a sensitive variable, NEVER record or later quote its literal value — set `default` to `none` or `(set per environment)` regardless of any value found in `.env.example`.
+
+Store the collected variable list in memory for Part 5c. If zero variables are found, record that no Config Reference will be produced.
+
+### Step 2c.3b — Scan for glossary terms
+
+Extract candidate domain terms from:
+1. Model/entity names (primary source — each becomes a term).
+2. Recurring nouns in route/URL path segments.
+3. Recurring domain nouns in comments and docstrings.
+
+For each distinct term, record: the `term`, a one-line `definition` with its source signal (the model/field/comment it derives from, or `inferred`), and the owning `domains`. Define a term once even if it spans domains. Store the term list in memory for Part 5c. If fewer than 3 distinct terms are found, record that no Glossary will be produced.
+
 ### Step 2c.4 — Draft and save business documents
 
 For each item in your ADR list:
@@ -221,6 +250,8 @@ Using the directory paths recorded in `pending_sections` for the current domain,
 - Read 1–2 additional files containing the most important business logic for this domain
 
 Limit reading to 8 files total across all directories in the domain. Prioritise files that reveal how the domain's business logic works over files that merely use it. For the cross-cutting infrastructure domain, prioritise reading the most widely-imported utility files.
+
+**For data-layer domains** (domains that define models/entities, schemas, or database access — see the diagram-methodology.md Part 1 "Data layer" category): additionally read the schema sources to extract field-level detail for the richer ER diagram (Step 2b / Step 5b) and prose (Step 5.3): ORM model definitions, SQL DDL/schema files, and the most recent or schema-shaping migration files. Capture each entity's fields, types, primary/foreign/unique keys, unique constraints, and notable indexes. These schema files do not count toward the 8-file business-logic cap — they are read specifically for data-model depth.
 
 ### Step 3.3 — Infer `business_context`
 
@@ -304,6 +335,32 @@ If a file serves this domain AND other domains (multi-domain file), still includ
 
 Store the collected snippets in memory — they will be embedded in the node body during Step 5.3.
 
+### Step 3.8 — Detect external dependencies & integrations
+
+From the files read for this domain, identify the external services it talks to. Signals:
+- **Imported SDK clients** (e.g., `stripe`, `boto3`, `sendgrid`, `twilio`, `redis`, `pika`/`kombu`, `elasticsearch`, database drivers)
+- **Base URLs / API hostnames** in constants or config
+- **Connection strings** (database URLs, `REDIS_URL`, broker URLs)
+- **Broker topics / queue names / channel names**
+
+For each external service, record:
+- `service` — the service or SDK name (factual)
+- `type` — one of `api` (third-party HTTP API), `database`, `queue`, `cache`
+- `failure_mode` — a one-line inference of what breaks for users if this service is unavailable, WITH a source signal (the file:line where the client is used, or `inferred`)
+
+**Exclude dead imports**: if an SDK is imported but never instantiated or invoked in the domain's files, do not list it.
+
+Store the dependency list in memory for Step 5.3. If the domain has no external dependencies, record none (the subsection will be omitted).
+
+### Step 3.9 — Discover tests
+
+Find how this domain's changes are verified:
+1. **Test files** covering the domain — match `tests/`, `__tests__/`, `*_test.*`, `*.test.*`, `test_*.*`; map to the domain by path correspondence (mirrored layout) and by the source symbols the tests import.
+2. **Run command** — from `Makefile` test targets, `package.json` `scripts.test` (and related), `pyproject.toml` / `tox.ini`, or an equivalent task runner; narrow to this domain's tests where the runner supports path/marker selection.
+3. **Fixtures/seeds** — factory files, fixture directories, `conftest.py`, or seed scripts referenced by the domain's tests (any inferred note carries a source signal).
+
+Record the test files, run command, and fixtures in memory for Step 5.3. If no tests cover this domain, record that explicitly — the `### Testing` subsection will state the gap rather than being omitted.
+
 ---
 
 ## Part 2b — Diagram Planning (run after Step 3.7 for each section)
@@ -330,6 +387,8 @@ For each diagram to be generated:
 2. Name each element in the diagram to match the primary components visible in the files read during Part 3, using the element naming convention from diagram-methodology.md § 2.2 (lowercase-hyphen labels)
 3. Write a one-sentence description for the diagram
 4. Choose a descriptive title (e.g., "Competition Management Architecture", "User Data Model", "Order Processing Flow")
+
+**For `erDiagram` (data-layer domains)**: author it **field-level** per diagram-methodology.md § 2.1.1 — list each entity's fields with types and `PK`/`FK`/`UK` markers, and show foreign-key relationships with cardinality, using the schema detail captured in Step 3.2. For an entity with more than 15 fields, include only keys/FKs/unique keys and business-critical columns, and note the total field count in the prose (Step 5.3). Do not produce a box-only ER diagram.
 
 Store the drafted diagram(s) for this section in memory — they will be validated and saved during Part 5b.
 
@@ -450,7 +509,7 @@ quality_score:   # values filled in by Part 5d after assembly — leave as place
 
 ## Technical Context
 
-<Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points. NO citations in this section.>
+<Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points. NO citations on narrative paragraphs. For data-layer domains, the prose ALSO lists foreign keys, unique constraints, and notable indexes, and references schema-shaping migrations (from Step 3.2) — these are factual transcriptions and are NOT cited; any inferred commentary on a field's business meaning IS cited.>
 
 <For each inline snippet collected in Step 3.7, insert immediately after the narrative paragraphs:>
 
@@ -460,6 +519,23 @@ quality_score:   # values filled in by Part 5d after assembly — leave as place
 ```
 
 <Repeat for each snippet — 1 to 5 snippets total>
+
+<If the domain has external dependencies (Step 3.8), insert this H3 subsection — omit entirely if none:>
+
+### Dependencies & Integrations
+
+- **<Service>** (<api | database | queue | cache>): <factual role>. Failure mode: <what breaks for users if unavailable> (src: <identifier>)
+
+<If this is a core/supporting handover_node, ALWAYS insert this H3 subsection (Step 3.9) — state the gap rather than omitting:>
+
+### Testing
+
+- Test files: `<path/to/test_x>`, `<path/to/test_y>`
+- Run: `<command>`
+- Fixtures/seeds: <fixtures or "none required"> <(src: …) if the fixture note is inferred>
+
+<If no tests cover this domain, the Testing subsection contains the single line:>
+- No tests found covering this domain.
 
 ## Decisions
 
@@ -484,9 +560,10 @@ The bold label line (`**\`path\` lines N–M**`) must appear on the line immedia
 - Example (inferred): `This domain appears to coordinate notification delivery across channels. (src: inferred)`
 
 Rules:
-- **Do NOT** add citations to `## Technical Context` paragraphs or to inline snippet bold-label lines — those are self-evidently sourced from the code (the label already names the file and lines).
+- **Do NOT** add citations to `## Technical Context` **narrative paragraphs** or to inline snippet bold-label lines — those are self-evidently sourced from the code (the label already names the file and lines). The same exemption covers factual data-model prose (field/type/FK/constraint/index facts transcribed from the schema).
+- **DO** add `(src: …)` citations to **inferred sub-bullets** within the `## Technical Context` H3 subsections: the **Failure mode** clause of each `### Dependencies & Integrations` bullet, and any **inferred note** in `### Testing` (e.g., which fixtures matter). Factual lines in these subsections — service names, test file paths, run commands — do NOT require citations.
 - **Never fabricate** a source. If a sentence is a genuine inference with no concrete file/section/commit, cite `(src: inferred)` — and ensure (per the Step 5.2 three-way link rule) that the enclosing field is in `inferred_fields` and tagged `low` in `confidence_tags`.
-- Every sentence in the three cited sections must carry exactly one citation. An uncited sentence in those sections fails the `no_unsupported_claims` rubric dimension (Part 5d) and forces a rewrite.
+- Every sentence in `## Business Context`, `## Decisions`, `## Warnings`, AND every inferred sub-bullet in the Dependencies/Testing subsections must carry exactly one citation. An uncited inferred claim in any of these fails the `no_unsupported_claims` rubric dimension (Part 5d) and forces a rewrite.
 
 ### Step 5b — Validate and attach diagrams
 
@@ -588,13 +665,15 @@ Run Part 5c after all handover nodes have been saved through Part 5 (i.e., after
 
 ### Step 5c.0 — Citations and quality pass for every business document
 
-Before writing each business document below (ADR, Runbook, API Summary, Onboarding Guide), apply two passes — the same machinery used for handover nodes:
+Before writing each business document below (ADR, Runbook, API Summary, Onboarding Guide, Config Reference, Glossary), apply two passes — the same machinery used for handover nodes:
 
 **Citations**: Add a trailing `(src: …)` citation to every sentence in the document's prose sections, using the four-form convention from Step 5.3. Prose sections by type:
 - ADR → `## Context`, `## Decision`, `## Consequences`
 - Runbook → `## Purpose` (the `## Steps` list and `## Prerequisites`/`## Expected Outcome` operational lines do NOT need citations — they are instructions, not inferred claims)
 - Onboarding Guide → `## Project Summary` (the `## Reading Order` and `## Related Documents` link lists do NOT need citations)
 - API Summary → `## Overview`, `## Authentication` (the `## Endpoints / Operations` list, derived directly from the contract file, does NOT need citations)
+- Config Reference → `## Overview`, and the **Purpose** cell of each row in the `## Variables` table (the Variable/Required/Default/Domain/Sensitive cells are factual and do NOT need citations)
+- Glossary → each definition in `## Terms` (the term and domain are factual; the definition is the inferred claim and IS cited)
 
 Never fabricate a source; use `(src: inferred)` for genuine inferences.
 
@@ -603,6 +682,10 @@ Never fabricate a source; use `(src: inferred)` for genuine inferences.
 > **Note**: The document templates in `diagram-methodology.md` §3.1–3.4 do NOT include a `quality_score` field — you MUST inject it into the frontmatter here, after the quality pass, before saving. The per-type validation in Steps 5c.1–5c.4 checks OP-14, so a business document saved without a valid `quality_score` will fail validation.
 
 Business documents generally carry no `inferred_fields` (they are drafted from explicit signals), so `confidence_tags` is usually absent for them. If a document does include an inferred field, tag it per the Step 5.2 rules.
+
+**Config Reference and Glossary — coarse inferred field (three-way invariant)**: these two carry inferred content (variable purposes, term definitions). Apply the invariant at node granularity using a single coarse field name:
+- Config Reference → if ANY variable's Purpose rests on `(src: inferred)`, add `variable_purposes` to `inferred_fields` and `confidence_tags: { variable_purposes: low }`. If every purpose traces to a concrete source, omit both.
+- Glossary → if ANY definition rests on `(src: inferred)`, add `term_definitions` to `inferred_fields` and `confidence_tags: { term_definitions: low }`. If every definition is concrete, omit both.
 
 ### Step 5c.1 — Save ADR documents
 
@@ -638,6 +721,33 @@ If an API Summary was drafted in Part 2c:
 2. Use `id: api-summary`; write to `.handoff/output/nodes/api-summary.md`
 3. Add index entry with `doc_type: "api_summary"`
 
+### Step 5c.3a — Save Config & Environment Reference (conditional)
+
+If ≥ 1 environment variable was collected in Step 2c.3a:
+
+1. Draft the node using the `config_reference` template in `diagram-methodology.md` § 3.5. Build the `## Overview` paragraph(s) and the `## Variables` table, one row per variable (name, purpose, required/optional, default, domain, sensitive).
+2. **Secret safety**: for any variable marked sensitive, the Default cell shows `none` or `(set per environment)` — never a literal value. Confirm no secret value appears anywhere in the body before saving.
+3. Apply Step 5c.0 citations (Overview sentences + each Purpose cell) and the coarse `variable_purposes` invariant.
+4. Run the Part 5d quality pass (`snippet_relevance` N/A).
+5. Validate against FM-01 through FM-09, OP-06, OP-12 (config_reference rules), and OP-14.
+6. Use `id: config-reference`; write to `.handoff/output/nodes/config-reference.md`.
+7. Add index entry with `doc_type: "config_reference"`.
+
+If zero environment variables were found, skip this step (no node produced).
+
+### Step 5c.3b — Save Glossary (conditional)
+
+If ≥ 3 distinct glossary terms were collected in Step 2c.3b:
+
+1. Draft the node using the `glossary` template in `diagram-methodology.md` § 3.6. Render `## Terms` with one entry per term: `- **<Term>** (<domains>): <definition> (src: …)`.
+2. Apply Step 5c.0 citations (each definition) and the coarse `term_definitions` invariant.
+3. Run the Part 5d quality pass (`snippet_relevance` N/A).
+4. Validate against FM-01 through FM-09, OP-06, OP-12 (glossary rules), and OP-14.
+5. Use `id: glossary`; write to `.handoff/output/nodes/glossary.md`.
+6. Add index entry with `doc_type: "glossary"`.
+
+If fewer than 3 distinct terms were found, skip this step (no node produced).
+
 ### Step 5c.4 — Save Onboarding Guide
 
 The Onboarding Guide must reference all nodes and documents now in `index.json`. Re-read `index.json` to get the complete current list.
@@ -658,7 +768,9 @@ After all documents are complete, sort the `index.json` `nodes` array using this
 3. Onboarding Guide node (`doc_type: "onboarding_guide"`)
 4. Runbook nodes (`doc_type: "runbook"`) — in detection order
 5. API Summary node (`doc_type: "api_summary"`) — if present
-6. Domain nodes (no doc_type or `doc_type: "handover_node"`) sorted: `core` first → `supporting` → `peripheral`
+6. Config Reference node (`doc_type: "config_reference"`) — if present
+7. Glossary node (`doc_type: "glossary"`) — if present
+8. Domain nodes (no doc_type or `doc_type: "handover_node"`) sorted: `core` first → `supporting` → `peripheral`
 
 Write the final `index.json`.
 
@@ -705,7 +817,7 @@ If the command fails (no git history or not in a git repo): omit `generated_at_s
 ### Step 7.1b — Generate index.md
 
 1. Read the final `index.json`
-2. Build **`## Business Overview`** section: for each node in the ordering position 1–5 (architecture-overview, ADRs, Onboarding Guide, Runbooks, API Summary), write a Markdown link: `- [<title>](nodes/<id>.md)`
+2. Build **`## Business Overview`** section: for each business-document node in index order (architecture-overview, ADRs, Onboarding Guide, Runbooks, API Summary, Config Reference, Glossary), write a Markdown link: `- [<title>](nodes/<id>.md)`
 3. Build **`## Domain Reference`** section with three subsections. For each domain node (doc_type absent or `handover_node`) in the appropriate depth group, write: `- [<title>](nodes/<id>.md) — <first sentence of the node's business_context section>` (read the node file to extract the first sentence)
    - `### Core Domains` — all `depth: core` domain nodes
    - `### Supporting Domains` — all `depth: supporting` domain nodes
