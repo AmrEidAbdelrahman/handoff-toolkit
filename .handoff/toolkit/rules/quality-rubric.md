@@ -20,13 +20,13 @@ Only values 1 and 2 may appear in the saved `quality_score` frontmatter. A 0 is 
 
 ## Dimension Applicability by `doc_type`
 
-| Dimension | handover_node | adr | runbook | onboarding_guide | api_summary | architecture-overview |
-|---|---|---|---|---|---|---|
-| `business_value_clarity` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `why_coverage` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `snippet_relevance` | ✓ | N/A | N/A | N/A | N/A | N/A |
-| `actionability` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `no_unsupported_claims` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Dimension | handover_node | adr | runbook | onboarding_guide | api_summary | architecture-overview | config_reference | glossary |
+|---|---|---|---|---|---|---|---|---|
+| `business_value_clarity` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `why_coverage` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `snippet_relevance` | ✓ | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| `actionability` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `no_unsupported_claims` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 For a dimension marked **N/A**, omit its key from `quality_score` entirely — do not write `0`, do not write `N/A` as a value.
 

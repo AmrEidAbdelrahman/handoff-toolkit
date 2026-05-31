@@ -118,7 +118,11 @@ Showing the confidence level tells the giver why this node surfaced early (the q
 
 ### Typed document display
 
-For nodes where `doc_type` is `adr`, `runbook`, `onboarding_guide`, or `api_summary`, the body sections differ from the standard `handover_node` sections (`## Business Context`, `## Technical Context`). Display whichever sections are present in the node file, using the same label rules above. Do not require the standard four sections — use the actual section headings as they appear in the node body.
+For nodes where `doc_type` is `adr`, `runbook`, `onboarding_guide`, `api_summary`, `config_reference`, or `glossary`, the body sections differ from the standard `handover_node` sections (`## Business Context`, `## Technical Context`). Display whichever sections are present in the node file, using the same label rules above. Do not require the standard four sections — use the actual section headings as they appear in the node body.
+
+For the two consolidated typed docs that carry a coarse inferred field:
+- `config_reference` with `inferred_fields: [variable_purposes]` — display the `## Variables` table and label the inferred Purpose column `[AI-guessed · <confidence>]`. Confirming clears `variable_purposes` from both `inferred_fields` and `confidence_tags`.
+- `glossary` with `inferred_fields: [term_definitions]` — display the `## Terms` list and label the inferred definitions `[AI-guessed · <confidence>]`. Confirming clears `term_definitions` from both `inferred_fields` and `confidence_tags`.
 
 The `architecture-overview` node (`depth: core`, no `doc_type` or `doc_type: handover_node`) is reviewed the same as any other core node.
 
