@@ -383,13 +383,14 @@ Using the files already read in Step 3.2, identify 1–5 inline code snippets fo
 
 For each snippet selected:
 - Record: `file` (path relative to project root), `start_line`, `end_line`, and the literal source lines
+- Record a short `note` (≤ 200 chars) describing what this snippet is — the symbol name and its role, e.g., "Public API: `OrderViewSet.create`" or "Core logic: bracket seeding". This note becomes both context for the reader and the `note` field of the navigable `code_refs` entry (Step 5.3).
 - Apply the line limit: quote 5–15 lines per snippet
 - For functions/classes longer than 15 lines: quote the signature + first 3–5 lines, insert a truncation comment (`# ... (lines X–Y omitted)` or the language equivalent), then optionally quote a meaningful closing statement
 - Use only files you have confirmed exist and read in Step 3.2
 
 If a file serves this domain AND other domains (multi-domain file), still include its most relevant snippet here — it will also appear in the other domain nodes.
 
-Store the collected snippets in memory — they will be embedded in the node body during Step 5.3.
+Store the collected snippets in memory — they are used twice in Step 5.3: (1) embedded as visible inline code blocks in the body, and (2) emitted as structured `code_refs` frontmatter entries so the VS Code extension can navigate to the live source on click. The `file`/`start_line`/`end_line` recorded here map directly to `code_refs[].file`/`line`/`end_line`.
 
 ### Step 3.8 — Detect external dependencies & integrations
 
@@ -543,6 +544,14 @@ title: <domain name>
 depth: <core | supporting | peripheral>
 schema_version: 1
 generated_at: <current ISO 8601 timestamp>
+code_refs:
+  # One entry per inline snippet collected in Step 3.7 — these make the code
+  # navigable: the VS Code extension opens <file> at <line> on click.
+  - file: <relative/path/to/file.ext>
+    line: <start_line>
+    end_line: <end_line>
+    note: <the snippet's note from Step 3.7>
+  # ... repeat for each snippet (omit the whole code_refs key only if the node has no snippets)
 inferred_fields:
   - business_context
   [- depth]
@@ -690,9 +699,9 @@ Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the
 - **Always check**: FM-01 through FM-08, OP-01 through OP-09, OP-12, BD-01 through BD-09 (for `handover_node` type only)
 - **OP-14** — `quality_score` must be present, a valid mapping, every value 1 or 2 (no 0), only permitted keys. Fail validation if any value is 0 (Part 5d did not complete) or a key is invalid.
 - **OP-15** — `confidence_tags` must be present when `inferred_fields` is non-empty; every value must be `high`/`medium`/`low`; keys should match `inferred_fields` entries.
-- **FM-09** is now optional — absence of `code_refs` is valid; skip FM-09 check if `code_refs` is absent
-- **CR-01 through CR-05** apply only if `code_refs` is present; skip these checks if `code_refs` is absent
-- **OP-10 and OP-11** are deprecated — skip
+- **FM-09 + CR-01 through CR-05** — every node that has inline snippets MUST emit a matching `code_refs` array (one entry per snippet) so the extension can navigate to the live source. Check: `code_refs` is a non-empty array (FM-09); each entry has a non-empty forward-slash `file` (CR-01) and a non-empty `note` ≤ 200 chars (CR-02); `line` is a positive integer (CR-03); `end_line` is present with `line` (CR-04) and `end_line ≥ line` (CR-05). A node with snippets but no `code_refs` fails this check — fix by emitting the refs from the Step 3.7 snippet data. (A node with genuinely no snippets — e.g., a thin peripheral node — may omit `code_refs`; absence is then valid.)
+- **Snippet/ref consistency** — every inline snippet in the body MUST have a corresponding `code_refs` entry whose `file`/`line`/`end_line` match the snippet's path and line range, and vice versa. They are generated from the same Step 3.7 data and must not drift.
+- **OP-10 and OP-11** are deprecated — skip (no `code_refs[].id` is emitted; the extension navigates by `file`+`line`)
 - **OP-13** is advisory — if `depth` is `core` or `supporting` and `## Technical Context` is present but has no inline snippet, log: "Advisory (OP-13): Technical Context has no inline snippets" but do NOT fail validation
 
 **If all mandatory rules pass**: proceed to Step 5.5.
