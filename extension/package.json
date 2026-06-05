@@ -1,0 +1,109 @@
+{
+  "name": "handoff",
+  "displayName": "Handoff",
+  "description": "Browse Handoff developer handovers as a guided, three-panel reading experience.",
+  "version": "0.3.0",
+  "publisher": "handoff",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/.handoff/output/index.json"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "handoff",
+          "title": "Handoff",
+          "icon": "media/handoff.svg"
+        }
+      ]
+    },
+    "views": {
+      "handoff": [
+        {
+          "id": "handoff.nav",
+          "name": "Handover",
+          "icon": "media/handoff.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "handoff.nav",
+        "contents": "No Handoff output found in this workspace.\n\nA repository with a committed `.handoff/output/` folder will appear here as a browsable handover.\n\n[Reload Handoff](command:handoff.refresh)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "handoff.open",
+        "title": "Handoff: Open Handover"
+      },
+      {
+        "command": "handoff.refresh",
+        "title": "Handoff: Reload",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "handoff.next",
+        "title": "Handoff: Next Section",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "handoff.previous",
+        "title": "Handoff: Previous Section",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "handoff.markAllRead",
+        "title": "Handoff: Mark All Read"
+      },
+      {
+        "command": "handoff.markAllUnread",
+        "title": "Handoff: Reset Progress"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "handoff.refresh",
+          "when": "view == handoff.nav",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "vscode:prepublish": "node esbuild.js --production",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "mocha",
+    "test": "vscode-test",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.4.0",
+    "shiki": "^1.22.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "esbuild": "^0.23.0",
+    "mocha": "^10.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

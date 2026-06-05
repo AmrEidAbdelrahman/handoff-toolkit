@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "project_name": "SampleApp",
+  "generated_at": "2026-06-01T10:00:00Z",
+  "nodes": [
+    { "id": "project-overview", "title": "Project Overview", "depth": "core", "dependencies": [], "file": "nodes/project-overview.md" },
+    { "id": "authentication", "title": "Authentication", "depth": "core", "dependencies": ["error-handling"], "file": "nodes/authentication.md" },
+    { "id": "error-handling", "title": "Error Handling", "depth": "supporting", "dependencies": [], "file": "nodes/error-handling.md" },
+    { "id": "dev-environment", "title": "Dev Environment", "depth": "peripheral", "dependencies": [], "file": "nodes/dev-environment.md" }
+  ]
+}
