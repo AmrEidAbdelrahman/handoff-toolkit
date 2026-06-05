@@ -55,15 +55,22 @@ Then set `status: "complete"` in session.json, write it, and stop.
 
 ## Part 2 — Walkthrough Loop
 
-Process nodes in the order they appear in `index.json` (core → supporting → peripheral).
+Process nodes in **confidence-sorted order** (lowest confidence first) so the giver's attention goes to the inferences most likely to be wrong.
 
-### Step 2.1 — Apply the resumption cursor
+### Step 2.1 — Build the confidence-sorted queue
 
-Before starting the loop, apply the resumption cursor (session-protocol.md Rule 6):
-- Scan nodes in index order
-- Find the first node where `inferred_fields` is present and non-empty
-- Start the walkthrough from that node
-- Silently skip all earlier nodes (they are already confirmed)
+Before starting the loop, build the review queue:
+
+1. Read `index.json` to get the node list in its stored order (core → supporting → peripheral).
+2. For each node, read its `.md` file and inspect the `confidence_tags` frontmatter mapping.
+3. Assign each node a **tier** based on its lowest-confidence field:
+   - **Tier 1** — the node has at least one field tagged `low`
+   - **Tier 2** — no `low` fields, but at least one field tagged `medium`
+   - **Tier 3** — all inferred fields are `high` (or the node has no `confidence_tags`)
+4. Sort the queue: Tier 1 first, then Tier 2, then Tier 3. Within each tier, preserve the node's original `index.json` order (core → supporting → peripheral).
+5. Apply the resumption cursor within this sorted queue: silently skip nodes where `inferred_fields` is absent or empty (already confirmed). Start the walkthrough at the first node in the sorted queue that still has non-empty `inferred_fields`.
+
+This replaces the plain index-order cursor from session-protocol.md Rule 6: the skip-confirmed behaviour is unchanged, but the order is now confidence-sorted rather than index-sorted.
 
 ### Step 2.2 — Process each node
 
@@ -101,15 +108,21 @@ Warnings  <label>           (omit this block if the Warnings section is absent)
 
 ### Label rules
 
-- For each field listed in `inferred_fields`: display label `[AI-guessed]`
+- For each field listed in `inferred_fields`: display label `[AI-guessed · <confidence>]` where `<confidence>` is the field's value from `confidence_tags` (`high` / `medium` / `low`). Example: `[AI-guessed · low]`. If a field is in `inferred_fields` but has no `confidence_tags` entry, display `[AI-guessed]` with no confidence suffix.
 - For all other fields (not in `inferred_fields`): display label `[from code]`
 - `technical_context` is never in `inferred_fields` — always show as `[from code]`
 - `title` and `depth` are not displayed in the review prompt (they are structural, not narrative)
 - Inline code snippets (fenced code blocks in `## Technical Context`) are structural content derived from source files — they are never reviewed interactively
 
+Showing the confidence level tells the giver why this node surfaced early (the queue is sorted low → high) and where their scrutiny matters most: `low` fields rest on weak signals (directory/file names) and are the most likely to be wrong.
+
 ### Typed document display
 
-For nodes where `doc_type` is `adr`, `runbook`, `onboarding_guide`, or `api_summary`, the body sections differ from the standard `handover_node` sections (`## Business Context`, `## Technical Context`). Display whichever sections are present in the node file, using the same label rules above. Do not require the standard four sections — use the actual section headings as they appear in the node body.
+For nodes where `doc_type` is `adr`, `runbook`, `onboarding_guide`, `api_summary`, `config_reference`, or `glossary`, the body sections differ from the standard `handover_node` sections (`## Business Context`, `## Technical Context`). Display whichever sections are present in the node file, using the same label rules above. Do not require the standard four sections — use the actual section headings as they appear in the node body.
+
+For the two consolidated typed docs that carry a coarse inferred field:
+- `config_reference` with `inferred_fields: [variable_purposes]` — display the `## Variables` table and label the inferred Purpose column `[AI-guessed · <confidence>]`. Confirming clears `variable_purposes` from both `inferred_fields` and `confidence_tags`.
+- `glossary` with `inferred_fields: [term_definitions]` — display the `## Terms` list and label the inferred definitions `[AI-guessed · <confidence>]`. Confirming clears `term_definitions` from both `inferred_fields` and `confidence_tags`.
 
 The `architecture-overview` node (`depth: core`, no `doc_type` or `doc_type: handover_node`) is reviewed the same as any other core node.
 
@@ -132,7 +145,8 @@ Wait for the giver's input. Handle each option as follows:
 ### On Enter (or "yes", "y", "confirm")
 
 - Remove all field names from this node's `inferred_fields` (set `inferred_fields: []`)
-- Write the updated node file (`.handoff/output/nodes/<id>.md`) with the empty `inferred_fields`
+- Remove the corresponding `confidence_tags` entries for those fields. Since all fields are confirmed, set `confidence_tags` to an empty mapping or remove the key entirely (per OP-15, a fully-confirmed node has absent or empty `confidence_tags`).
+- Write the updated node file (`.handoff/output/nodes/<id>.md`) with the empty `inferred_fields` and cleared `confidence_tags`
 - Re-validate the node using the rules in `.handoff/toolkit/rules/output-schema.md`. If any rules fail, display them inline and fix automatically if possible; only stop if a required field is missing.
 - Print: "✓ <title> confirmed."
 - Move to the next node.
@@ -146,6 +160,7 @@ Wait for the giver's input. Handle each option as follows:
 5. If the giver provides new content:
    - Update the field in the node with the giver's content
    - Remove this field from `inferred_fields`
+   - Remove this field's entry from `confidence_tags` (the value is now human-provided, not AI-inferred)
    - Write the updated node file
    - Re-validate against `output-schema.md` rules. Display any failures inline.
    - Print: "✓ <field> updated."

@@ -33,6 +33,16 @@ Attempt to read `.handoff/session.json`. Determine which case applies per sessio
 
 Do not proceed past Step 1.2 until session state is resolved and written to disk.
 
+### Step 1.3 — Capture git context (for permalinks, SHA, and risk analysis)
+
+Capture the git context ONCE here, at session start, so it is available to snippet permalinks (Step 5.3) and the git-history analysis (Part 2d). Store all of the following in memory for the session:
+
+1. **`git_available`**: run `git rev-parse HEAD`. If it fails (no git, no commits), set `git_available = false` and skip the rest of this step — all git-derived output (permalinks, recorded SHA, Part 2d hotspot/ownership/tribal) is then skipped gracefully throughout the session. If it succeeds, set `git_available = true` and store the 40-char SHA as `generated_at_sha`.
+2. **`repo_blob_base` + `repo_host_style`**: run `git remote get-url origin`. Normalise to `https://<host>/<owner>/<repo>` (strip a trailing `.git`; convert SSH `git@<host>:<owner>/<repo>` to the https form). If the host contains `gitlab`, set `repo_host_style = gitlab`; if it is a GitHub host, set `repo_host_style = github`; otherwise `unknown`. If there is no remote, leave `repo_blob_base` unset.
+3. **`dirty_tracked_paths`**: run `git status --porcelain` and collect the set of paths whose status is a **tracked** change (staged or modified — i.e., the line does NOT begin with `??`). **Exclude untracked (`??`) entries.** This set is used per-file in Step 5.3: a snippet permalink is only unsafe if that snippet's own file is in this set. (Untracked unrelated files — e.g., the toolkit install itself — must NOT disable permalinks for clean tracked source files.)
+
+Print nothing unless `git_available` is false, in which case note: "No git history — git-derived insights (permalinks, fragility, ownership, history notes) will be skipped."
+
 ---
 
 ## Part 2 — Autonomous Project Scan
@@ -94,6 +104,34 @@ Print a brief status line: "Identified N business domains. Documenting autonomou
 
 ---
 
+## Part 2d — Git History Analysis (run once, immediately after Step 2.3, before Part 2a)
+
+Run Part 2d exactly once per fresh session and at the start of a delta re-run (Part 4). **If `git_available` is false (Step 1.3), skip Part 2d entirely** — all consumers (hotspot warnings, ownership notes, tribal-knowledge warnings) then produce nothing, with no error. Compute the three result sets below and store them in memory, grouped by domain using the `directories` recorded in `pending_sections`.
+
+### Step 2d.1 — Churn / hotspot ranking (feeds Step 3.6 warnings)
+
+1. Aggregate churn: `git log --format= --name-only | sort | uniq -c | sort -rn` — this gives commit-count-per-file across history. Down-weight or drop files authored predominantly by detectable bots/automation (names containing `bot`, `[bot]`, `dependabot`, `github-actions`).
+2. For each high-churn file, estimate a **complexity proxy** from signals already used by the warning heuristics (file length, function length, nesting depth) — read the file if it is a plausible hotspot.
+3. Mark a file **fragile** only when churn is high AND complexity is above the triviality floor. The **triviality floor excludes** changelogs, version files, lockfiles, generated files, and config-only files even when they top the churn list (e.g., `CHANGELOG.md`, `VERSION`, `package-lock.json` are high-churn but trivial — never flag them).
+4. Group fragile files by the domain that owns them. Store `{path, churn, domain}` per fragile file.
+
+### Step 2d.2 — Ownership / bus-factor (feeds Step 5.3 `### Ownership`)
+
+1. Per domain, find the dominant author over the domain's directories: `git shortlog -sn HEAD -- <domain paths>` (use the explicit `HEAD` argument — `git shortlog -sn` alone may read nothing in a non-interactive shell). Fallback if needed: `git log --format='%an' -- <paths> | sort | uniq -c | sort -rn`.
+2. Flag **single-author files** (bus-factor 1): a file where `git log --format='%an' -- <file> | sort -u` yields exactly one distinct author.
+3. If a `CODEOWNERS` file exists (root, `.github/`, or `docs/`), parse the declared owner(s) for each domain's paths.
+4. Store per domain: `de_facto_owner` (+ commit count), `codeowners_owner` (if any), `single_author_files` list.
+
+### Step 2d.3 — Tribal-knowledge mining (feeds Step 3.6 warnings)
+
+1. Find candidate commits: `git log -i --grep='revert\|hotfix\|workaround\|don'\''t\|careful\|gotcha' --oneline` (case-insensitive). Prefer commits where the keyword leads the message, and `revert`/`hotfix` commit patterns, over incidental mid-message mentions.
+2. For each candidate, determine the files it touched (`git show --name-only --format= <sha>`) and map them to domains.
+3. Record `{sha7, keyword, lesson (one-line summary of the message), domain}`. **Deduplicate** by (lesson, file) and **cap at 3–5 per domain** — keep the most significant; do not emit a wall of near-identical bullets.
+
+Store all three result sets in memory for consumption by Step 3.6 (hotspot + tribal warnings) and Step 5.3 (`### Ownership`).
+
+---
+
 ## Part 2a — Architecture Overview Generation (run once, immediately after Step 2.3)
 
 Run Part 2a before any domain nodes are documented. This produces the first node saved to output.
@@ -112,11 +150,28 @@ Build the following sections:
 
 **`## Business Context`**: 2–4 sentences from the project README and manifests. Describe what the project does, who it serves, and what would break for users if it stopped working.
 
-**`## Technical Context`**: One paragraph summarising the technology stack (language, framework, key libraries, deployment model). Then a `### Domains` subsection with one bullet per business domain: `- **<Domain Name>**: <one-sentence description of the domain's business purpose>`. If a cross-cutting infrastructure node exists, add a `### Cross-Cutting Infrastructure` subsection with one paragraph describing shared utilities.
+**`## Technical Context`**: Open with a `**TL;DR:** <1–2 sentences>` lead (US3 — same as Step 5.3; the architecture overview is assembled here, not via Step 5.3, so the TL;DR must be added in this step). The TL;DR abstracts the whole system technically (stack + how the domains fit together) and is citation-exempt. Then one paragraph summarising the technology stack (language, framework, key libraries, deployment model). Then a `### Domains` subsection with one bullet per business domain: `- **<Domain Name>**: <one-sentence description of the domain's business purpose>`. If a cross-cutting infrastructure node exists, add a `### Cross-Cutting Infrastructure` subsection with one paragraph describing shared utilities. If the architecture overview frontmatter has `doc_refs` (e.g., ADRs linked to it), add a `### Related` subsection with `- [<title>](<id>.md) — <one-line why related>` links (US4); omit if no doc_refs.
 
 **`## Diagrams`**: The system architecture diagram from Step 2a.1, using the required H3 + description + fenced mermaid block structure from `diagram-methodology.md` § 2.3.
 
+### Step 2a.2b — Trace critical flows into the `## Diagrams` section
+
+Run this step BEFORE Step 2a.3 (the architecture overview must contain the flow diagrams before it is scored and saved). It adds 1–3 cross-domain critical-flow sequence diagrams to the `## Diagrams` section drafted in Step 2a.2.
+
+1. **Pick the top entry points**: identify the project's principal request entry points — the busiest/most central routes or URL patterns, top-level CLI commands, or job triggers. Choose 1–3 that represent the system's core user journeys (e.g., sign-up, the primary create/transaction flow, a key read flow).
+2. **Trace each flow**: for each chosen entry point, read the entry-point file and follow the call path — the handler/view it maps to, the service or business-logic function that handler calls, the model(s) it reads/writes, and any external client it invokes. These are lightweight targeted reads, independent of the per-domain reads in Part 3.
+3. **Draft one `sequenceDiagram` per flow** following `diagram-methodology.md` § 2.5: cross at least two domains, lowercase-hyphen participant labels, ≤ ~8 participants, `->>` calls / `-->>` returns, and a one-sentence H3 description naming the user journey. Run the § 2.4 diagram validation on each.
+4. Append these diagram blocks to the overview's `## Diagrams` section, after the system architecture diagram.
+
+If no end-to-end flow is discernible (e.g., a pure library with no request entry points), add no critical-flow diagrams and continue. The description lines live in `## Diagrams` and are citation-exempt.
+
 ### Step 2a.3 — Save the architecture overview node
+
+First, apply citations and tags to the body drafted in Step 2a.2:
+- Every sentence in the `## Business Context` section must carry a trailing `(src: …)` citation (same convention as Step 5.3 — `README §<heading>`, `<relative-path>:<line>`, `commit <sha7>`, or `inferred`). The `### Domains` bullets under `## Technical Context` do not require citations.
+- Assign `confidence_tags` for `business_context` using the Step 5.2 rules (`high` if drawn from an explicit README description; `medium` if drawn from the set of model/route names; `low` if only from directory names). Honour the three-way link rule: a `business_context` resting on `(src: inferred)` is `low`.
+
+Then run the **quality refinement pass (Part 5d)** on this node: read the rubric, score the applicable dimensions (`snippet_relevance` is N/A — the architecture overview has no inline snippets), rewrite any dimension scoring 0, and record the final `quality_score`. The body scored here includes the critical-flow diagrams added in Step 2a.2b. Note: the diagram description lines in `## Diagrams` (system diagram and critical-flow diagrams) are citation-exempt — do not add `(src: …)` to them.
 
 Assemble the complete node file:
 
@@ -130,9 +185,16 @@ diagram_format: mermaid
 generated_at: <current ISO 8601 timestamp>
 inferred_fields:
   - business_context
+confidence_tags:
+  business_context: <high | medium | low>
+quality_score:
+  business_value_clarity: <1 | 2>
+  why_coverage: <1 | 2>
+  actionability: <1 | 2>
+  no_unsupported_claims: <1 | 2>
 ---
 
-<body from Step 2a.2>
+<body from Step 2a.2, with citations applied>
 ```
 
 1. Write to `.handoff/output/nodes/architecture-overview.md`
@@ -165,6 +227,35 @@ Check for Runbook detection signals as defined in `diagram-methodology.md` § 3.
 ### Step 2c.3 — Check for API contract file
 
 Check whether any API contract trigger file exists (defined in `diagram-methodology.md` § 3.4). If found, record it for API Summary generation.
+
+### Step 2c.3a — Scan for environment variables (Config Reference)
+
+Mine every environment variable the project reads. Sources, merged by variable name:
+1. **In-code reads**: `process.env.X`, `os.environ['X']` / `os.environ.get('X')` / `os.getenv('X')`, framework settings accessors (`settings.X`, `env('X')`, `config('X')`).
+2. **`.env.example` / `.env.sample` / `.env.template`** files — names and example values.
+3. **Settings/config files** that read environment variables (`settings.py`, `config/*.py`, `config.*.js`, etc.).
+4. **`docker-compose.yml` / `docker-compose.*.yml`** `environment:` blocks.
+
+For each variable, record:
+- `name`
+- `purpose` — a one-line description with its source signal (the file:line where it is read, or `inferred`)
+- `required` — `optional` if a default exists (code default like `os.getenv('X', default)`, `||` fallback, or a value in `.env.example`); otherwise `required`
+- `default` — the default value, or `none`
+- `domains` — the consuming domain name(s), mapped via the `pending_sections` directory map
+- `sensitive` — `yes` if the name contains `SECRET`, `KEY`, `PASSWORD`, `PASS`, `TOKEN`, `CREDENTIAL`, or `PRIVATE`; else `no`
+
+**Secret safety**: for a sensitive variable, NEVER record or later quote its literal value — set `default` to `none` or `(set per environment)` regardless of any value found in `.env.example`.
+
+Store the collected variable list in memory for Part 5c. If zero variables are found, record that no Config Reference will be produced.
+
+### Step 2c.3b — Scan for glossary terms
+
+Extract candidate domain terms from:
+1. Model/entity names (primary source — each becomes a term).
+2. Recurring nouns in route/URL path segments.
+3. Recurring domain nouns in comments and docstrings.
+
+For each distinct term, record: the `term`, a one-line `definition` with its source signal (the model/field/comment it derives from, or `inferred`), and the owning `domains`. Define a term once even if it spans domains. Store the term list in memory for Part 5c. If fewer than 3 distinct terms are found, record that no Glossary will be produced.
 
 ### Step 2c.4 — Draft and save business documents
 
@@ -209,6 +300,8 @@ Using the directory paths recorded in `pending_sections` for the current domain,
 
 Limit reading to 8 files total across all directories in the domain. Prioritise files that reveal how the domain's business logic works over files that merely use it. For the cross-cutting infrastructure domain, prioritise reading the most widely-imported utility files.
 
+**For data-layer domains** (domains that define models/entities, schemas, or database access — see the diagram-methodology.md Part 1 "Data layer" category): additionally read the schema sources to extract field-level detail for the richer ER diagram (Step 2b / Step 5b) and prose (Step 5.3): ORM model definitions, SQL DDL/schema files, and the most recent or schema-shaping migration files. Capture each entity's fields, types, primary/foreign/unique keys, unique constraints, and notable indexes. These schema files do not count toward the 8-file business-logic cap — they are read specifically for data-model depth.
+
 ### Step 3.3 — Infer `business_context`
 
 Use the domain name identified in Step 2.2 as the semantic basis. Derive a 2–4 sentence description of what this domain does for the business, focusing on user-facing value. Do not reference directory names.
@@ -221,6 +314,14 @@ Draw on these sources, in priority order:
 4. **Commit message patterns**: Scan git log for recent commits touching this domain's files for user-facing value signals.
 
 Write `business_context` as 2–4 sentences describing: what business capability this domain provides, why it exists, and what would break for users if it disappeared.
+
+**Record the source signal for each sentence (for citations).** As you write each sentence, note the strongest signal it rests on, using one of these four forms — you will render it as a trailing `(src: …)` citation in Step 5.3:
+- A README section → `README §<heading>` (e.g., `README §Tournament Management`)
+- A specific source line → `<relative-path>:<line>` (e.g., `competition/models.py:14`)
+- A git commit message → `commit <7-char-sha>` (e.g., `commit a1b2c3d`)
+- A pure naming/pattern inference with no concrete source → `inferred`
+
+Keep each sentence's source signal in memory alongside the sentence text. Never fabricate a source — if the sentence is a genuine inference with no concrete file/section/commit behind it, its signal is `inferred`, and per the three-way link rule (see Step 5.2) the `business_context` field must then be in `inferred_fields` and tagged `low` in `confidence_tags`.
 
 If none of the above sources yield usable signal, fall back to Part 6 (minimal-question fallback) for this field only.
 
@@ -249,6 +350,8 @@ Scan the files read in Step 3.2 for signals of documented architectural choices:
 
 For each identified decision, write one bullet: describe what was decided and why (inferred from the comment or pattern). If no decisions are found, omit the `## Decisions` section entirely from the node.
 
+**Record the source signal for each decision bullet (for citations).** Note the signal each bullet rests on, using the same four forms as Step 3.3 (`README §<heading>`, `<relative-path>:<line>`, `commit <sha7>`, or `inferred`). A decision inferred from a `// Note:` comment cites that comment's line; a decision inferred from an unusual library choice cites the line where the library is imported/used. Keep each bullet's signal in memory for rendering in Step 5.3.
+
 ### Step 3.6 — Infer `warnings`
 
 Scan the files read in Step 3.2 for these signals:
@@ -261,6 +364,15 @@ Scan the files read in Step 3.2 for these signals:
 - Known deprecated APIs being used (e.g., `componentWillMount` in React, deprecated library methods)
 
 For each warning found, write one bullet describing the issue and its location (file + approximate line if known). If no warnings are found, omit the `## Warnings` section entirely from the node.
+
+**Record the source signal for each warning bullet (for citations).** Most warnings have a concrete location — cite it as `<relative-path>:<line>` (e.g., the line of the `TODO`/`FIXME` comment, or the start line of an over-long function). Use the same four forms as Step 3.3. A warning that is a general observation with no specific line is `inferred`. Keep each bullet's signal in memory for rendering in Step 5.3.
+
+**Add git-derived warnings from Part 2d (skip if `git_available` is false).** Consult the Part 2d result sets for this domain and append two kinds of warning bullets:
+
+- **Fragile-file (hotspot) bullets** from Step 2d.1 — for each fragile file owned by this domain: `Fragile — change carefully: \`<path>\` (<churn> commits, high complexity) (src: <commit range or inferred>)`. These are the high-churn-high-complexity files; trivial high-churn files were already excluded in Part 2d.
+- **Tribal-knowledge bullets** from Step 2d.3 — for each retained item for this domain: the one-line lesson with a commit citation: `<lesson> (src: commit <sha7>)` (Step 5.3 upgrades this to a clickable commit permalink when a host is known).
+
+If this domain has no fragile files and no tribal items, add nothing. These git-derived bullets are inferences — `warnings` therefore stays in `inferred_fields` with its confidence tag (the warning is `low`/`medium` per the strength of the git signal).
 
 ### Step 3.7 — Collect inline code snippets
 
@@ -278,6 +390,32 @@ For each snippet selected:
 If a file serves this domain AND other domains (multi-domain file), still include its most relevant snippet here — it will also appear in the other domain nodes.
 
 Store the collected snippets in memory — they will be embedded in the node body during Step 5.3.
+
+### Step 3.8 — Detect external dependencies & integrations
+
+From the files read for this domain, identify the external services it talks to. Signals:
+- **Imported SDK clients** (e.g., `stripe`, `boto3`, `sendgrid`, `twilio`, `redis`, `pika`/`kombu`, `elasticsearch`, database drivers)
+- **Base URLs / API hostnames** in constants or config
+- **Connection strings** (database URLs, `REDIS_URL`, broker URLs)
+- **Broker topics / queue names / channel names**
+
+For each external service, record:
+- `service` — the service or SDK name (factual)
+- `type` — one of `api` (third-party HTTP API), `database`, `queue`, `cache`
+- `failure_mode` — a one-line inference of what breaks for users if this service is unavailable, WITH a source signal (the file:line where the client is used, or `inferred`)
+
+**Exclude dead imports**: if an SDK is imported but never instantiated or invoked in the domain's files, do not list it.
+
+Store the dependency list in memory for Step 5.3. If the domain has no external dependencies, record none (the subsection will be omitted).
+
+### Step 3.9 — Discover tests
+
+Find how this domain's changes are verified:
+1. **Test files** covering the domain — match `tests/`, `__tests__/`, `*_test.*`, `*.test.*`, `test_*.*`; map to the domain by path correspondence (mirrored layout) and by the source symbols the tests import.
+2. **Run command** — from `Makefile` test targets, `package.json` `scripts.test` (and related), `pyproject.toml` / `tox.ini`, or an equivalent task runner; narrow to this domain's tests where the runner supports path/marker selection.
+3. **Fixtures/seeds** — factory files, fixture directories, `conftest.py`, or seed scripts referenced by the domain's tests (any inferred note carries a source signal).
+
+Record the test files, run command, and fixtures in memory for Step 5.3. If no tests cover this domain, record that explicitly — the `### Testing` subsection will state the gap rather than being omitted.
 
 ---
 
@@ -306,6 +444,8 @@ For each diagram to be generated:
 3. Write a one-sentence description for the diagram
 4. Choose a descriptive title (e.g., "Competition Management Architecture", "User Data Model", "Order Processing Flow")
 
+**For `erDiagram` (data-layer domains)**: author it **field-level** per diagram-methodology.md § 2.1.1 — list each entity's fields with types and `PK`/`FK`/`UK` markers, and show foreign-key relationships with cardinality, using the schema detail captured in Step 3.2. For an entity with more than 15 fields, include only keys/FKs/unique keys and business-critical columns, and note the total field count in the prose (Step 5.3). Do not produce a box-only ER diagram.
+
 Store the drafted diagram(s) for this section in memory — they will be validated and saved during Part 5b.
 
 ---
@@ -316,15 +456,17 @@ Run Part 4 only when `index.json` has a `generated_at_sha` (Case C resume). For 
 
 ### Step 4.1 — Compute the diff
 
-Run: `git diff --name-only <generated_at_sha> HEAD`
+First, capture the git context for this run by running **Step 1.3** (it may not have run if the session jumped straight to delta mode): refresh `generated_at_sha` to current HEAD, `repo_blob_base`, `repo_host_style`, and `dirty_tracked_paths`. Then run **Part 2d (Git History Analysis)** so the hotspot/ownership/tribal result sets are fresh for the re-run — affected and new nodes consume them in Step 4.4. (Skip Part 2d if `git_available` is false.)
 
-If the command fails with an error indicating the SHA is not in history (e.g., "unknown revision", "not a valid object name"): print "SHA not found in history — performing full regeneration" and treat this as a fresh scan (run Part 2 then Part 3 for all sections).
+Then run: `git diff --name-only <generated_at_sha-from-index.json> HEAD`
+
+If the command fails with an error indicating the SHA is not in history (e.g., "unknown revision", "not a valid object name"): print "SHA not found in history — performing full regeneration" and treat this as a fresh scan (run Part 2, Part 2d, then Part 3 for all sections).
 
 ### Step 4.2 — Map changed files to existing nodes
 
 Read `index.json` to get the current node list. For each changed file from the diff:
 - For nodes with `code_refs`: check whether the file path appears in any node's `code_refs[].file` values
-- For nodes without `code_refs` (feature 003+ style): scan the node's `## Technical Context` body for bold label lines matching the pattern `**\`<path>\`` — if the changed file path appears in any such label, include that node as affected
+- For nodes without `code_refs` (feature 003+ style): scan the node's `## Technical Context` body for snippet label lines and extract the `<path>` from each. Labels appear in TWO forms — match both: the plain form `**\`<path>\` lines N–M**` and the feature-006 permalink form `**[\`<path>\` lines N–M](<url>)**` (note the `[` between `**` and the backtick). If the changed file path appears in any such label (either form), include that node as affected
 - Collect the set of node IDs whose references include at least one changed file
 
 ### Step 4.3 — Identify new domains
@@ -334,12 +476,12 @@ Run Part 2's semantic domain discovery (Step 2.2) on the current codebase. Compa
 ### Step 4.4 — Process affected and new sections
 
 For affected existing nodes:
-- Re-run Part 3 (Steps 3.2 through 3.7) for each affected node to re-infer all fields
+- Re-run **all per-domain Part 3 steps** (every Step 3.x — currently 3.2 read, 3.3 business_context, 3.4 depth, 3.5 decisions, 3.6 warnings incl. the Part 2d hotspot/tribal bullets, 3.7 snippets, 3.8 dependencies, 3.9 tests) for each affected node to re-infer all fields. (Stated as "all Part 3 steps" rather than a fixed number range so new steps added by future features are not silently skipped.)
 - Reset `inferred_fields` to the newly inferred list (as if documenting from scratch)
 - Overwrite the node file with the updated content
 
 For new sections:
-- Run Part 3 (Steps 3.2 through 3.7) as for a fresh session
+- Run **all per-domain Part 3 steps** as for a fresh session
 - Create new node files and add entries to `index.json`
 
 Leave all unaffected nodes completely untouched — do not re-read, re-infer, or overwrite them.
@@ -377,6 +519,19 @@ Do NOT include a field in `inferred_fields` if:
 - The giver answered a question about it (see Part 6 — it is then human-provided)
 - It was read verbatim from an explicit human-written architecture document
 
+**Build `confidence_tags` alongside `inferred_fields`.** For every field in `inferred_fields`, assign a confidence level using these deterministic rules (apply the first that matches the strongest signal that produced the field):
+
+- **`high`** — the field was inferred from an explicit README heading, a docstring, or a source comment (`# Note:`, `# Why:`, `# ADR:`, `// Reason:`, etc.). The intent was written by a human in prose.
+- **`medium`** — the field was inferred from structured-but-undocumented signals: route/URL paths, model or entity names, view/handler class names, or import patterns.
+- **`low`** — the field was inferred solely from directory or file names, with no corroborating model, route, comment, or README signal.
+
+**Three-way link rule (must hold for every field):** these three facts always travel together — if any one is true, all three must be true:
+1. The field's claim(s) rest on `(src: inferred)` (no concrete source found in Step 3.3/3.5/3.6).
+2. The field's `confidence_tags` entry is `low`.
+3. The field is in `inferred_fields`.
+
+So: any field whose sentences are all `(src: inferred)` is `low` and must be in `inferred_fields`. Conversely, a field tagged `high` must have at least one concrete (non-`inferred`) citation.
+
 ### Step 5.3 — Assemble the node
 
 Build the complete node file content with YAML frontmatter and Markdown body:
@@ -393,35 +548,107 @@ inferred_fields:
   [- depth]
   [- decisions]
   [- warnings]
+confidence_tags:
+  business_context: <high | medium | low>
+  [depth: <high | medium | low>]
+  [decisions: <high | medium | low>]
+  [warnings: <high | medium | low>]
+quality_score:   # values filled in by Part 5d after assembly — leave as placeholders here
+  business_value_clarity: <1 | 2>
+  why_coverage: <1 | 2>
+  snippet_relevance: <1 | 2>
+  actionability: <1 | 2>
+  no_unsupported_claims: <1 | 2>
 ---
 
 ## Business Context
 
-<Inferred business context — 2–4 sentences>
+<Inferred business context — 2–4 sentences. Each sentence ends with a citation: see "Citation rendering" below.>
 
 ## Technical Context
 
-<Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points>
+**TL;DR:** <1–2 sentences abstracting the whole section — what this domain does technically and how it hangs together. Must NOT duplicate the first detail sentence. Citation-exempt (Technical Context narrative).>
 
-<For each inline snippet collected in Step 3.7, insert immediately after the narrative paragraphs:>
+<Technical description — 2–5 paragraphs covering: high-level approach, data flow, key patterns/libraries, entry points. NO citations on narrative paragraphs. For data-layer domains, the prose ALSO lists foreign keys, unique constraints, and notable indexes, and references schema-shaping migrations (from Step 3.2) — these are factual transcriptions and are NOT cited; any inferred commentary on a field's business meaning IS cited.>
 
-**`<relative/path/to/file.ext>` lines N–M**
+<For each inline snippet collected in Step 3.7, insert immediately after the narrative paragraphs. The bold label is a clickable permalink when safe (see "Snippet permalinks" below), otherwise the plain label:>
+
+**[`<relative/path/to/file.ext>` lines N–M](<permalink>)**
 ```<language>
 <quoted source lines, truncated with omission comment if needed>
 ```
 
 <Repeat for each snippet — 1 to 5 snippets total>
 
+<If the domain has external dependencies (Step 3.8), insert this H3 subsection — omit entirely if none:>
+
+### Dependencies & Integrations
+
+- **<Service>** (<api | database | queue | cache>): <factual role>. Failure mode: <what breaks for users if unavailable> (src: <identifier>)
+
+<If this is a core/supporting handover_node, ALWAYS insert this H3 subsection (Step 3.9) — state the gap rather than omitting:>
+
+### Testing
+
+- Test files: `<path/to/test_x>`, `<path/to/test_y>`
+- Run: `<command>`
+- Fixtures/seeds: <fixtures or "none required"> <(src: …) if the fixture note is inferred>
+
+<If no tests cover this domain, the Testing subsection contains the single line:>
+- No tests found covering this domain.
+
+<If the node has dependencies or doc_refs, insert this H3 subsection — omit if both empty:>
+
+### Related
+
+- [<related node title>](<related-id>.md) — <one-line why related>
+
+<If Part 2d produced ownership data for this domain (git_available), insert this H3 subsection — omit entirely if no git data and no CODEOWNERS:>
+
+### Ownership
+
+- De facto owner: <author> (<n> commits) (src: inferred from git shortlog)
+- Declared owner (CODEOWNERS): <owner>            <!-- only if a CODEOWNERS entry covers this domain -->
+- Single-author files (bus-factor 1): `<path>`, `<path>`
+
 ## Decisions
 
-<Bulleted list of decisions — omit section entirely if no decisions found>
+<Bulleted list of decisions — each bullet ends with a citation. Omit section entirely if no decisions found>
 
 ## Warnings
 
-<Bulleted list of warnings — omit section entirely if no warnings found>
+<Bulleted list of warnings — each bullet ends with a citation. Omit section entirely if no warnings found>
 ```
 
-The bold label line (`**\`path\` lines N–M**`) must appear on the line immediately before the opening fence with no blank line between them.
+The bold label line must appear on the line immediately before the opening fence with no blank line between them.
+
+**Snippet permalinks (US4)**: render each snippet's bold label as a clickable permalink to the exact lines at the recorded commit, when ALL of these hold: `git_available` is true; `repo_blob_base` is known; `repo_host_style` is `github` or `gitlab`; AND the snippet's own file is NOT in `dirty_tracked_paths` (Step 1.3). Build the URL:
+- GitHub: `<repo_blob_base>/blob/<generated_at_sha>/<path>#L<N>-L<M>`
+- GitLab: `<repo_blob_base>/-/blob/<generated_at_sha>/<path>#L<N>-<M>`
+- Rendered label: `**[`<path>` lines N–M](<url>)**`
+
+Otherwise — no host, unsupported host style, no SHA, OR this file has uncommitted tracked changes (would link to the wrong lines) — fall back to the plain label `**`<path>` lines N–M**` with no link. The snippet label IS the citation; do not add a separate `(src: …)`.
+
+**`### Related` subsection (US4)**: build from the node's `dependencies` and `doc_refs`. For each, render `- [<related node title>](<related-id>.md) — <one-line why related>` (read the related node's title from its frontmatter; the link target is the node filename `<id>.md`). Omit the whole subsection if the node has neither dependencies nor doc_refs. These are structural links — no citation.
+
+**`### Ownership` subsection (US5)**: render from the Part 2d Step 2d.2 ownership data for this domain. The de facto owner line carries `(src: inferred from git shortlog)`; the CODEOWNERS line (only if a CODEOWNERS entry covers this domain) is factual. Omit the whole subsection when `git_available` is false AND no CODEOWNERS entry applies. The de-facto-owner and bus-factor flags are git-derived inferences — they keep `warnings`/ownership reasoning honest, but ownership lives in this subsection (not Warnings) to avoid duplication.
+
+**`confidence_tags`**: Include one entry per field in `inferred_fields`, using the levels assigned in Step 5.2. Do not include entries for fields not in `inferred_fields`.
+
+**`quality_score`**: Write the five keys as placeholders here (omit `snippet_relevance` only for typed documents that have no inline snippets). The actual integer values (1 or 2) are determined and written by the quality refinement pass in Part 5d, which runs after this assembly and before validation.
+
+**Citation rendering (the `(src: …)` markers)**: For every sentence in `## Business Context`, every bullet in `## Decisions`, and every bullet in `## Warnings`, append a trailing citation using the source signal you recorded in Steps 3.3 / 3.5 / 3.6:
+
+- Format: a single space, then `(src: <identifier>)` at the end of the sentence/bullet.
+- Identifier forms: `README §<heading>`, `<relative-path>:<line>`, `commit <sha7>`, or `inferred`.
+- Example: `Manages tournament brackets and match scheduling so organisers can run competitions end to end. (src: competition/models.py:14)`
+- Example (inferred): `This domain appears to coordinate notification delivery across channels. (src: inferred)`
+
+Rules:
+- **Do NOT** add citations to `## Technical Context` **narrative paragraphs** or to inline snippet bold-label lines — those are self-evidently sourced from the code (the label already names the file and lines). The same exemption covers factual data-model prose (field/type/FK/constraint/index facts transcribed from the schema).
+- **DO** add `(src: …)` citations to **inferred sub-bullets** within the `## Technical Context` H3 subsections: the **Failure mode** clause of each `### Dependencies & Integrations` bullet, and any **inferred note** in `### Testing` (e.g., which fixtures matter). Factual lines in these subsections — service names, test file paths, run commands — do NOT require citations.
+- **Never fabricate** a source. If a sentence is a genuine inference with no concrete file/section/commit, cite `(src: inferred)` — and ensure (per the Step 5.2 three-way link rule) that the enclosing field is in `inferred_fields` and tagged `low` in `confidence_tags`.
+- Every sentence in `## Business Context`, `## Decisions`, `## Warnings`, AND every inferred sub-bullet in the Dependencies/Testing subsections must carry exactly one citation. An uncited inferred claim in any of these fails the `no_unsupported_claims` rubric dimension (Part 5d) and forces a rewrite.
 
 ### Step 5b — Validate and attach diagrams
 
@@ -440,10 +667,29 @@ Run this step before Step 5.4. It is part of node assembly.
 
 **Step 5b.4 — Assemble `## Diagrams` section**: For each surviving diagram, append a diagram block to the node body using the structure from diagram-methodology.md § 2.3. Place the `## Diagrams` section as the last section in the body, after `## Warnings` if present. If no diagrams survived, omit the `## Diagrams` section entirely.
 
+### Part 5d — Quality Refinement Pass
+
+Run Part 5d after the node body and diagrams are assembled (Step 5b) and before validation (Step 5.4). This is the draft → critique → refine pass. It applies to every node type (handover nodes, the architecture overview, and all business documents).
+
+**Step 5d.1 — Read the rubric**: Read `.handoff/toolkit/rules/quality-rubric.md` completely. Do not rely on memory — read it fresh.
+
+**Step 5d.2 — Score the node**: For the node you just assembled, score each applicable dimension (per the rubric's applicability table for this `doc_type`) as 0, 1, or 2. Apply each dimension's score-0 trigger as a **mechanical test** — if the trigger condition is literally true, the score is 0. Counter your own self-assessment bias: a node you wrote will feel fine; score by the triggers, not by feel. Skip dimensions marked N/A for this doc_type.
+
+**Step 5d.3 — Rewrite failing dimensions**: For each dimension scoring 0:
+1. Rewrite ONLY the section(s) named in that dimension's "Section(s)" line (not the whole node), applying the dimension's "Rewrite action on 0".
+2. Re-score that one dimension. It must now be ≥ 1. If a rewrite still scores 0 after two attempts, apply the dimension's fallback (e.g., soften an unsupported claim to a cited observation; reduce boilerplate snippets to one and note the domain is thin) so the dimension reaches 1.
+3. Preserve citations and the three-way link rule during any rewrite — newly added uncited sentences must get a `(src: …)` citation; new `(src: inferred)` sentences force their field to `low` / `inferred_fields`.
+
+**Step 5d.4 — Write final scores**: Replace the `quality_score` placeholders in the frontmatter with the final per-dimension integer values (1 or 2 only). Omit `snippet_relevance` for typed documents that have no inline snippets. No dimension may be saved as 0.
+
+Print a one-line note only if any rewrite happened: "  ↻ refined [title]: rewrote <dimension(s)>".
+
 ### Step 5.4 — Validate the node
 
 Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the assembled content:
 - **Always check**: FM-01 through FM-08, OP-01 through OP-09, OP-12, BD-01 through BD-09 (for `handover_node` type only)
+- **OP-14** — `quality_score` must be present, a valid mapping, every value 1 or 2 (no 0), only permitted keys. Fail validation if any value is 0 (Part 5d did not complete) or a key is invalid.
+- **OP-15** — `confidence_tags` must be present when `inferred_fields` is non-empty; every value must be `high`/`medium`/`low`; keys should match `inferred_fields` entries.
 - **FM-09** is now optional — absence of `code_refs` is valid; skip FM-09 check if `code_refs` is absent
 - **CR-01 through CR-05** apply only if `code_refs` is present; skip these checks if `code_refs` is absent
 - **OP-10 and OP-11** are deprecated — skip
@@ -502,11 +748,35 @@ Print a one-line status: "✓ [title] ([depth]) — [N] sections remaining."
 
 Run Part 5c after all handover nodes have been saved through Part 5 (i.e., after the last section's Step 5.7 completes). This part saves all business documents drafted in Part 2c.
 
+### Step 5c.0 — Citations and quality pass for every business document
+
+Before writing each business document below (ADR, Runbook, API Summary, Onboarding Guide, Config Reference, Glossary), apply two passes — the same machinery used for handover nodes:
+
+**Citations**: Add a trailing `(src: …)` citation to every sentence in the document's prose sections, using the four-form convention from Step 5.3. Prose sections by type:
+- ADR → `## Context`, `## Decision`, `## Consequences`
+- Runbook → `## Purpose` (the `## Steps` list and `## Prerequisites`/`## Expected Outcome` operational lines do NOT need citations — they are instructions, not inferred claims)
+- Onboarding Guide → `## Project Summary` (the `## Reading Order` and `## Related Documents` link lists do NOT need citations)
+- API Summary → `## Overview`, `## Authentication` (the `## Endpoints / Operations` list, derived directly from the contract file, does NOT need citations)
+- Config Reference → `## Overview`, and the **Purpose** cell of each row in the `## Variables` table (the Variable/Required/Default/Domain/Sensitive cells are factual and do NOT need citations)
+- Glossary → each definition in `## Terms` (the term and domain are factual; the definition is the inferred claim and IS cited)
+
+Never fabricate a source; use `(src: inferred)` for genuine inferences.
+
+**Quality pass (Part 5d)**: Run the quality refinement pass on each business document. `snippet_relevance` is N/A for all business document types — omit that key. Score the remaining four dimensions, rewrite any scoring 0, and write the final `quality_score` into the document's frontmatter.
+
+> **Note**: The document templates in `diagram-methodology.md` §3.1–3.4 do NOT include a `quality_score` field — you MUST inject it into the frontmatter here, after the quality pass, before saving. The per-type validation in Steps 5c.1–5c.4 checks OP-14, so a business document saved without a valid `quality_score` will fail validation.
+
+Business documents generally carry no `inferred_fields` (they are drafted from explicit signals), so `confidence_tags` is usually absent for them. If a document does include an inferred field, tag it per the Step 5.2 rules.
+
+**Config Reference and Glossary — coarse inferred field (three-way invariant)**: these two carry inferred content (variable purposes, term definitions). Apply the invariant at node granularity using a single coarse field name:
+- Config Reference → if ANY variable's Purpose rests on `(src: inferred)`, add `variable_purposes` to `inferred_fields` and `confidence_tags: { variable_purposes: low }`. If every purpose traces to a concrete source, omit both.
+- Glossary → if ANY definition rests on `(src: inferred)`, add `term_definitions` to `inferred_fields` and `confidence_tags: { term_definitions: low }`. If every definition is concrete, omit both.
+
 ### Step 5c.1 — Save ADR documents
 
 For each ADR drafted in Part 2c:
 
-1. Apply FM-01 through FM-09 and OP-06 and OP-12 (adr rules) from `output-schema.md` to validate the document
+1. Apply FM-01 through FM-09, OP-06, OP-12 (adr rules), and OP-14 (`quality_score` present, all values 1 or 2) from `output-schema.md` to validate the document
 2. Assign a node `id` following the naming convention: `<section-id>-<short-decision-slug>-adr` (e.g., `auth-jwt-strategy-adr`)
 3. Write the document to `.handoff/output/nodes/<id>.md`
 4. Add an index entry with `doc_type: "adr"`:
@@ -519,7 +789,7 @@ For each ADR drafted in Part 2c:
 
 For each Runbook drafted in Part 2c:
 
-1. Validate against FM-01 through FM-09, OP-06, and OP-12 (runbook rules)
+1. Validate against FM-01 through FM-09, OP-06, OP-12 (runbook rules), and OP-14 (`quality_score` present, all values 1 or 2)
 2. Assign a node `id` following the naming convention: `<short-procedure-slug>-runbook` (e.g., `local-dev-setup-runbook`)
 3. Write the document to `.handoff/output/nodes/<id>.md`
 4. Add an index entry with `doc_type: "runbook"`:
@@ -532,9 +802,36 @@ For each Runbook drafted in Part 2c:
 
 If an API Summary was drafted in Part 2c:
 
-1. Validate against FM-01 through FM-09, OP-06, and OP-12 (api_summary rules)
+1. Validate against FM-01 through FM-09, OP-06, OP-12 (api_summary rules), and OP-14 (`quality_score` present, all values 1 or 2)
 2. Use `id: api-summary`; write to `.handoff/output/nodes/api-summary.md`
 3. Add index entry with `doc_type: "api_summary"`
+
+### Step 5c.3a — Save Config & Environment Reference (conditional)
+
+If ≥ 1 environment variable was collected in Step 2c.3a:
+
+1. Draft the node using the `config_reference` template in `diagram-methodology.md` § 3.5. Build the `## Overview` paragraph(s) and the `## Variables` table, one row per variable (name, purpose, required/optional, default, domain, sensitive).
+2. **Secret safety**: for any variable marked sensitive, the Default cell shows `none` or `(set per environment)` — never a literal value. Confirm no secret value appears anywhere in the body before saving.
+3. Apply Step 5c.0 citations (Overview sentences + each Purpose cell) and the coarse `variable_purposes` invariant.
+4. Run the Part 5d quality pass (`snippet_relevance` N/A).
+5. Validate against FM-01 through FM-09, OP-06, OP-12 (config_reference rules), and OP-14.
+6. Use `id: config-reference`; write to `.handoff/output/nodes/config-reference.md`.
+7. Add index entry with `doc_type: "config_reference"`.
+
+If zero environment variables were found, skip this step (no node produced).
+
+### Step 5c.3b — Save Glossary (conditional)
+
+If ≥ 3 distinct glossary terms were collected in Step 2c.3b:
+
+1. Draft the node using the `glossary` template in `diagram-methodology.md` § 3.6. Render `## Terms` with one entry per term: `- **<Term>** (<domains>): <definition> (src: …)`.
+2. Apply Step 5c.0 citations (each definition) and the coarse `term_definitions` invariant.
+3. Run the Part 5d quality pass (`snippet_relevance` N/A).
+4. Validate against FM-01 through FM-09, OP-06, OP-12 (glossary rules), and OP-14.
+5. Use `id: glossary`; write to `.handoff/output/nodes/glossary.md`.
+6. Add index entry with `doc_type: "glossary"`.
+
+If fewer than 3 distinct terms were found, skip this step (no node produced).
 
 ### Step 5c.4 — Save Onboarding Guide
 
@@ -543,7 +840,7 @@ The Onboarding Guide must reference all nodes and documents now in `index.json`.
 1. Build `## Reading Order` from the `index.json` nodes array (core first, then supporting, then peripheral); exclude ADRs, Runbooks, and other business document types from this list
 2. Build `## Related Documents` from all ADR and Runbook entries added to `index.json`
 3. Write `## Project Summary` as a paragraph derived from the project's README and the core nodes' business contexts
-4. Validate against FM-01 through FM-09, OP-06, and OP-12 (onboarding_guide rules)
+4. Validate against FM-01 through FM-09, OP-06, OP-12 (onboarding_guide rules), and OP-14 (`quality_score` present, all values 1 or 2)
 5. Write to `.handoff/output/nodes/onboarding-guide.md` (overwrite if it exists from a previous run)
 6. Add index entry with `doc_type: "onboarding_guide"` if not already present; update if it exists
 
@@ -556,7 +853,9 @@ After all documents are complete, sort the `index.json` `nodes` array using this
 3. Onboarding Guide node (`doc_type: "onboarding_guide"`)
 4. Runbook nodes (`doc_type: "runbook"`) — in detection order
 5. API Summary node (`doc_type: "api_summary"`) — if present
-6. Domain nodes (no doc_type or `doc_type: "handover_node"`) sorted: `core` first → `supporting` → `peripheral`
+6. Config Reference node (`doc_type: "config_reference"`) — if present
+7. Glossary node (`doc_type: "glossary"`) — if present
+8. Domain nodes (no doc_type or `doc_type: "handover_node"`) sorted: `core` first → `supporting` → `peripheral`
 
 Write the final `index.json`.
 
@@ -594,16 +893,16 @@ Run Part 7 when `pending_sections` is empty and all nodes are saved.
 
 ### Step 7.1 — Record the git SHA
 
-Run: `git rev-parse HEAD`
+Use the `generated_at_sha` captured at session start in Step 1.3 (do NOT re-run `git rev-parse HEAD` here — the SHA recorded must be the one the snippets and permalinks were rendered against). Update `index.json` by adding `"generated_at_sha": "<generated_at_sha>"` and setting `"generated_at"` to the current ISO 8601 timestamp. Write `index.json`.
 
-If the command succeeds: read the 40-character hex SHA. Update `index.json` by adding `"generated_at_sha": "<sha>"` and setting `"generated_at"` to the current ISO 8601 timestamp. Write `index.json`.
+If `git_available` was false at Step 1.3 (no git history or not in a git repo): omit `generated_at_sha` from `index.json`. Note to the giver: "Could not record a git SHA — the project may not have any commits yet."
 
-If the command fails (no git history or not in a git repo): omit `generated_at_sha` from `index.json`. Note to the giver: "Could not record a git SHA — the project may not have any commits yet."
+(If HEAD happened to move during the run, prefer the Step 1.3 value — that is the commit the documented snippets were read at.)
 
 ### Step 7.1b — Generate index.md
 
 1. Read the final `index.json`
-2. Build **`## Business Overview`** section: for each node in the ordering position 1–5 (architecture-overview, ADRs, Onboarding Guide, Runbooks, API Summary), write a Markdown link: `- [<title>](nodes/<id>.md)`
+2. Build **`## Business Overview`** section: for each business-document node in index order (architecture-overview, ADRs, Onboarding Guide, Runbooks, API Summary, Config Reference, Glossary), write a Markdown link: `- [<title>](nodes/<id>.md)`
 3. Build **`## Domain Reference`** section with three subsections. For each domain node (doc_type absent or `handover_node`) in the appropriate depth group, write: `- [<title>](nodes/<id>.md) — <first sentence of the node's business_context section>` (read the node file to extract the first sentence)
    - `### Core Domains` — all `depth: core` domain nodes
    - `### Supporting Domains` — all `depth: supporting` domain nodes

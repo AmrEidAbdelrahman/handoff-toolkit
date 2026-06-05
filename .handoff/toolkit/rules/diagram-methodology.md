@@ -58,6 +58,33 @@ Use only the following Mermaid types:
 
 Do not use other Mermaid types (`gantt`, `pie`, `gitGraph`, `classDiagram`, etc.) — they are not supported by the extension renderer in this version.
 
+#### 2.1.1 — Field-level `erDiagram` authoring (data-layer domains)
+
+When generating an `erDiagram` for a data-layer domain, make it **field-level, not box-level**. Each entity block must list its actual fields with types and key markers:
+
+```mermaid
+erDiagram
+  USER {
+    int id PK
+    string email UK
+    int profile_id FK
+    datetime created_at
+  }
+  PROFILE {
+    int id PK
+    string display_name
+  }
+  USER ||--|| PROFILE : has
+```
+
+Rules:
+- List each entity's fields as `<type> <name>` lines inside the entity block. Mark keys with `PK` (primary key), `FK` (foreign key), and `UK` (unique key).
+- Show foreign-key relationships between entities with the correct cardinality (`||--||`, `||--o{`, `}o--o{`, etc.).
+- Derive fields and types from the ORM model definitions, SQL DDL/schema files, or migration files.
+- **Entities with more than 15 fields**: show only the most significant fields (primary key, foreign keys, unique keys, and business-critical columns) in the diagram, and note the total field count in the node's `## Technical Context` prose (e.g., "USER has 23 fields; key columns shown").
+
+The data-layer node's `## Technical Context` prose must also list foreign keys, unique constraints, and notable indexes, and reference schema-shaping migrations (table creation, significant alterations) when migrations exist. These are factual transcriptions from the schema source and do not require citations.
+
 ### 2.2 — Diagram element naming
 
 Use descriptive, stable labels for diagram elements. Labels should reflect the component's name as it appears in the codebase (class name, module name, service name). Use lowercase-hyphen format for multi-word labels. These labels are for diagram readability only — they are not used for navigation wiring.
@@ -110,6 +137,36 @@ After drafting a diagram, self-validate the Mermaid source before saving:
   `- DIAGRAM VALIDATION FAILED — replaced with prose: <Diagram Title>`
 
 Do not leave broken Mermaid source in a node. Either it renders correctly or it is replaced with prose.
+
+### 2.5 — Critical-flow sequence diagrams (architecture overview)
+
+The architecture overview node carries 1–3 **critical-flow** `sequenceDiagram`s that trace the system's core user journeys end to end, ACROSS domain boundaries. These are different from the per-section optional sequence diagrams: they are deliberately cross-cutting, and they are the single most illuminating artifact in a handover.
+
+Authoring rules:
+- **Trace from the entry point**: start at a request entry point (an HTTP route/handler, CLI command, or job trigger) and follow the call path — entry → service / business logic → data layer (model) → external dependency (if any) → response.
+- **Cross domains**: each diagram should pass through at least two business domains (e.g., a route in one domain calling a service that writes a model in another and calls an external gateway).
+- **Participants**: use lowercase-hyphen labels (§ 2.2) for participants, named after the real components (e.g., `orders-route`, `order-service`, `order-model`, `payment-gateway`). Cap at ~8 participants; if the real flow has more hops, trace the principal ones and summarise the rest in the description sentence.
+- **One sentence names the journey**: the H3 description line names the user journey in plain language (e.g., "User places an order", "A new member signs up and is added to a competition"). This description lives in `## Diagrams` and is **citation-exempt** — do not append `(src: …)`.
+- **Arrows**: use `->>` for calls and `-->>` for returns.
+
+Example:
+
+```mermaid
+sequenceDiagram
+  participant client as client
+  participant route as orders-route
+  participant service as order-service
+  participant model as order-model
+  participant gateway as payment-gateway
+  client->>route: POST /orders
+  route->>service: create_order(payload)
+  service->>model: persist(order)
+  service->>gateway: charge(amount)
+  gateway-->>service: receipt
+  service-->>client: 201 Created
+```
+
+If no end-to-end flow is discernible (e.g., a pure library with no request entry points), produce no critical-flow diagrams — do not force one.
 
 ---
 
@@ -300,6 +357,95 @@ Produce an API Summary if and only if any of the following files exist in the pr
 If none of these files exist, do not produce an API Summary. Do not fabricate endpoint information.
 
 **Naming convention**: Always `api-summary.md`.
+
+---
+
+### 3.5 — Config & Environment Reference
+
+**`doc_type: config_reference`**
+
+**Purpose**: Consolidates every environment variable the project reads into one node, so a receiver can configure and start the project without grepping the codebase. This is consistently the #1 thing handovers miss.
+
+**Template**:
+
+```markdown
+---
+id: config-reference
+title: "Config & Environment Reference"
+depth: supporting
+schema_version: 1
+doc_type: config_reference
+quality_score:
+  business_value_clarity: <1 | 2>
+  why_coverage: <1 | 2>
+  actionability: <1 | 2>
+  no_unsupported_claims: <1 | 2>
+---
+
+## Overview
+<What configuration the project needs, where it is loaded from (settings files, .env, environment), and any grouping. One or more paragraphs. Sentences carry (src: …) citations.>
+
+## Variables
+
+| Variable | Purpose | Required | Default | Domain | Sensitive |
+|---|---|---|---|---|---|
+| `DATABASE_URL` | Primary database connection (src: settings.py:14) | required | none | Cross-Cutting Infrastructure | no |
+| `STRIPE_SECRET_KEY` | Payment gateway authentication (src: payments/client.py:8) | required | none | Payments | yes |
+```
+
+**Column rules**:
+- **Purpose**: one-line description carrying a `(src: …)` citation (concrete source where the variable is read, or `inferred`).
+- **Required**: `required` if read with no default and no `.env.example` value; `optional` if a default exists (code default, `||` fallback, or `.env.example` entry).
+- **Default**: the default value, or `none`. For sensitive variables, never quote a literal value — use `none` or `(set per environment)`.
+- **Domain**: the consuming domain name(s).
+- **Sensitive**: `yes` if the variable name contains `SECRET`, `KEY`, `PASSWORD`, `PASS`, `TOKEN`, `CREDENTIAL`, or `PRIVATE`; otherwise `no`. A sensitive variable is listed and described but its value is NEVER shown.
+
+**Detection trigger** (conditional — produce only when triggered): produce a Config & Environment Reference if the project reads any environment variable, via any of:
+- In-code reads: `process.env.X`, `os.environ['X']` / `os.environ.get('X')` / `os.getenv('X')`, framework settings accessors (`settings.X`, `env('X')`, `config('X')`)
+- `.env.example` / `.env.sample` / `.env.template` files
+- Settings/config files that read environment variables
+- `docker-compose.yml` / `docker-compose.*.yml` `environment:` blocks
+
+If the project reads zero environment variables, do not produce this node.
+
+**Naming convention**: Always `config-reference.md`.
+
+---
+
+### 3.6 — Glossary / Ubiquitous Language
+
+**`doc_type: glossary`**
+
+**Purpose**: Defines the project's domain jargon so a new team member does not burn days decoding model names and recurring nouns.
+
+**Template**:
+
+```markdown
+---
+id: glossary
+title: "Glossary: <Project Name>"
+depth: supporting
+schema_version: 1
+doc_type: glossary
+quality_score:
+  business_value_clarity: <1 | 2>
+  why_coverage: <1 | 2>
+  actionability: <1 | 2>
+  no_unsupported_claims: <1 | 2>
+---
+
+## Terms
+
+- **Competition** (Competition Management): A tournament or league that teams enter and play matches within (src: competition/models.py:11)
+- **Bracket** (Competition Management): The elimination tree that determines match pairings (src: competition/bracket.py:6)
+- **Follow** (Social Features): A directional relationship where one user subscribes to another's activity (src: social/models.py:9)
+```
+
+**Entry format**: `- **<Term>** (<owning domain(s)>): <one-line definition> (src: <identifier>)`. Each definition carries a citation (the model/field/comment it derives from, or `inferred`). A term spanning multiple domains is defined once with all owning domains listed. For terms that collide with common English words (e.g., "Match", "Order"), define the project-specific sense and note the domain.
+
+**Detection trigger** (conditional — produce only when triggered): produce a Glossary if the project has at least 3 distinct domain terms (drawn from model/entity names, recurring route/URL nouns, and recurring domain nouns in comments/docstrings). If fewer than 3 distinct terms exist, do not produce this node.
+
+**Naming convention**: Always `glossary.md`.
 
 ---
 
