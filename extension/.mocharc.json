@@ -1,0 +1,5 @@
+{
+  "require": "tsx",
+  "spec": "tests/unit/**/*.test.ts",
+  "timeout": 10000
+}
