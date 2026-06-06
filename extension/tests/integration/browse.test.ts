@@ -23,7 +23,11 @@ describe('US1: browse and read', () => {
     assert.equal(tree[0].kind, 'pinned');
     assert.equal(tree[0].id, 'project-overview');
 
-    // Depth groups present in order (core group holds authentication only).
+    // Both reserved roots pinned; technical-overview is second.
+    assert.equal(tree[1].kind, 'pinned');
+    assert.equal(tree[1].id, 'technical-overview');
+
+    // Depth groups present (jwt-internals is nested, so supporting group has error-handling + api-summary).
     const groups = tree.filter((t) => t.kind === 'group').map((g) => g.depth);
     assert.deepEqual(groups, ['core', 'supporting', 'peripheral']);
 
@@ -36,5 +40,32 @@ describe('US1: browse and read', () => {
     const errors = nodeById.get('error-handling')!;
     assert.deepEqual(errors.sections.map((s) => s.kind), ['business', 'technical']);
     assert.match(auth.sections[0].html, /paid tier/);
+  });
+
+  it('nests jwt-internals under authentication via parent field', async () => {
+    const loc = locateHandoff();
+    const result = await loadHandover(loc!);
+    assert.ok(result.ok);
+    if (!result.ok) return;
+    const { tree, order } = result.handover;
+
+    // authentication is in the core depth group and has jwt-internals as a child.
+    const coreGroup = tree.find((t) => t.kind === 'group' && t.depth === 'core');
+    assert.ok(coreGroup, 'core depth group exists');
+    const auth = coreGroup!.children.find((c) => c.id === 'authentication');
+    assert.ok(auth, 'authentication in core group');
+    assert.ok(auth!.collapsible, 'authentication is collapsible');
+    assert.deepEqual(auth!.children.map((c) => c.id), ['jwt-internals']);
+
+    // jwt-internals is NOT a direct member of any depth group.
+    const allGroupChildren = tree
+      .filter((t) => t.kind === 'group')
+      .flatMap((g) => g.children.map((c) => c.id));
+    assert.ok(!allGroupChildren.includes('jwt-internals'), 'jwt-internals not at group level');
+
+    // Reading order: jwt-internals immediately follows authentication.
+    const authIdx = order.findIndex((n) => n.id === 'authentication');
+    assert.ok(authIdx !== -1, 'authentication in reading order');
+    assert.equal(order[authIdx + 1]?.id, 'jwt-internals');
   });
 });

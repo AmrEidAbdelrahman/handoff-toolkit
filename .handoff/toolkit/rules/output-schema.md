@@ -94,6 +94,8 @@ For all typed documents: H1 headings are still prohibited (Rule BD-07 applies). 
 
 **Rule OP-17**: Advisory. A `handover_node` MAY include a `### Product Brief` H3 subsection within its `## Business Context` section. This is the only conventional H3 subsection name introduced for `## Business Context`. Its presence does not violate BD-09 or BD-07. When present, `### Product Brief` MUST follow the `## Business Context` opening paragraph(s) and MUST contain the following five elements in order: (1) `**Problem**:` — one paragraph describing the user pain or business gap; (2) `**Target users**:` — who uses this feature; (3) `**Capabilities**:` — a bulleted list of user-facing outcomes (no code identifiers, module paths, or framework terminology); (4) `**Out of scope**:` — what the domain intentionally does not do; (5) `**Success indicators**:` — measurable outcomes. When `### Product Brief` content was AI-inferred, `product_brief` MUST appear in the node's `inferred_fields` array (per OP-04). If a confident product narrative cannot be inferred, the subsection MUST be omitted entirely — no placeholder text.
 
+**Rule OP-18**: If `parent` is present in a node's frontmatter, it must satisfy all of the following: (a) it is a non-empty string matching `^[a-z0-9]+(-[a-z0-9]+)*$`; (b) it does not equal the node's own `id` (self-reference); (c) following the chain of `parent` references does not loop back to the original node (cycle prohibition); (d) it is not set on the reserved root node ids `project-overview` or `technical-overview`. Absence of `parent` is valid — it means the node is root-level. A `parent` value that references a node id not present in the output is a warning (the node is rendered at root level), not a hard failure.
+
 ---
 
 ## Part 2 — Body Section Validation
@@ -135,6 +137,10 @@ Use these rules when validating `.handoff/output/index.json` alongside a node fi
 **Rule IX-02**: The index entry's `file` value equals `nodes/<id>.md` where `<id>` is the node's `id`.
 
 **Rule IX-03**: If `dependencies` is present in the node frontmatter, each listed `id` exists as an entry in `index.json`.
+
+**Rule IX-04**: If `parent` is present in an index entry, the referenced `id` must exist as another entry in the same `index.json`. A missing reference does not fail validation — it produces a warning (`INDEX_DANGLING_PARENT`) and the node is treated as root-level.
+
+**Rule IX-05**: Reserved root node ids (`project-overview` and `technical-overview`) must not have a `parent` field set in their index entry. Presence of `parent` on a reserved root produces a warning (`INDEX_ROOT_HAS_PARENT`).
 
 ---
 

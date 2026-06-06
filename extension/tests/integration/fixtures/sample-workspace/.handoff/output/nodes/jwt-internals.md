@@ -3,6 +3,7 @@ id: jwt-internals
 title: JWT Internals
 depth: supporting
 schema_version: 1
+parent: authentication
 code_refs:
   - file: src/auth/jwt.ts
     line: 3

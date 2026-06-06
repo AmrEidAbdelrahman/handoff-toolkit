@@ -170,6 +170,32 @@ export function validateDependencies(
   return issues;
 }
 
+const RESERVED_ROOT_IDS = new Set(['project-overview', 'technical-overview']);
+
+// Rules IX-04 and IX-05: validate parent references in index entries.
+export function crossCheckParents(entries: IndexEntry[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const knownIds = new Set(entries.map((e) => e.id));
+  for (const entry of entries) {
+    if (!entry.parent) continue;
+    if (RESERVED_ROOT_IDS.has(entry.id)) {
+      issues.push(
+        issue('warning', 'INDEX_ROOT_HAS_PARENT', `Reserved root node "${entry.id}" must not have a parent.`, entry.id),
+      );
+    } else if (!knownIds.has(entry.parent)) {
+      issues.push(
+        issue(
+          'warning',
+          'INDEX_DANGLING_PARENT',
+          `Node "${entry.id}" has parent "${entry.parent}" which is not in the index; treating as root-level.`,
+          entry.id,
+        ),
+      );
+    }
+  }
+  return issues;
+}
+
 export function crossCheckIndex(
   entries: IndexEntry[],
   nodeFilesPresent: ReadonlySet<string>,
