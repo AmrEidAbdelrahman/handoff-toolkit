@@ -224,9 +224,29 @@ Check for Runbook detection signals as defined in `diagram-methodology.md` § 3.
 - Identify the procedure it represents
 - Record it in a list: `[(signal_file, procedure_title), ...]`
 
-### Step 2c.3 — Check for API contract file
+### Step 2c.3 — Check for API contract file and source-code routes
 
-Check whether any API contract trigger file exists (defined in `diagram-methodology.md` § 3.4). If found, record it for API Summary generation.
+Check whether any API contract trigger file exists (defined in `diagram-methodology.md` § 3.5). If found, set `contract_file_found = true` and record it for API Summary generation.
+
+If NO contract file was found, check for source-code route patterns in the domain's directories. If any of the following are present, set `source_route_file_found = true` and record the file path (this read counts toward the 8-file cap):
+- **Django**: `urls.py` in the domain directory
+- **Express/Fastify**: `routes.js`, `router.js`, or any `.js`/`.ts` file that imports `express.Router`
+- **Flask**: any `.py` file containing `Blueprint(` or `@app.route(`
+- **FastAPI**: any `.py` file containing `APIRouter(` or `@app.get`/`@app.post`/`@app.put`/`@app.delete`/`@app.patch(`
+
+**Invariant**: Use the contract file if found (existing behaviour). `source_route_file_found` is only acted on when `contract_file_found` is false.
+
+**Extraction sub-step** (when `source_route_file_found = true`): Read the detected route file and extract for each endpoint:
+1. HTTP method (GET, POST, PUT, DELETE, PATCH, etc.)
+2. Path pattern (e.g., `/api/competitions/`)
+3. Handler or view reference (the function or class name the route maps to)
+
+Then for each handler reference, read the handler function body (5–15 lines, per Step 3.7 line-limit rules) and extract:
+- Docstring or first comment (used as the endpoint description)
+- Parameter names
+- Return shape indicator (what kind of object is returned)
+
+Record each handler's `file`, `line`, and `end_line` in memory for `code_refs` assembly in Step 2c.4.
 
 ### Step 2c.3a — Scan for environment variables (Config Reference)
 
@@ -257,6 +277,29 @@ Extract candidate domain terms from:
 
 For each distinct term, record: the `term`, a one-line `definition` with its source signal (the model/field/comment it derives from, or `inferred`), and the owning `domains`. Define a term once even if it spans domains. Store the term list in memory for Part 5c. If fewer than 3 distinct terms are found, record that no Glossary will be produced.
 
+### Step 2c.3c — Infer Product Brief (for handover_node domains only)
+
+Run this step for every domain in `pending_sections`. Use the Step 2c.3 detection results.
+
+**Inference trigger** (run in order, stop at first match):
+1. Domain has ≥ 1 HTTP endpoint (detected via Step 2c.3 route or contract detection) → **confidence: HIGH**
+2. Domain module name is a recognisable business noun — NOT `utils`, `migrations`, `admin`, `config`, `tests`, or `middleware` — AND ≥ 1 named model exists → **confidence: MEDIUM**
+3. No signal found → **skip**; do NOT generate a Product Brief for this domain
+
+**When confidence is HIGH or MEDIUM**: draft `### Product Brief` content using these five elements in order:
+
+- **Problem**: one paragraph inferred from the domain's entry-point docstring, first-level comments, or README reference — the user pain or business gap this domain addresses
+- **Target users**: inferred from route auth requirements and endpoint path semantics (e.g., authenticated-only routes → internal users; public routes → end-users)
+- **Capabilities**: a bulleted list; each bullet is a user-facing outcome — translate each HTTP endpoint or major exported function into plain-English value (e.g., "Browse and filter active competitions", not "GET /competitions/")
+- **Out of scope**: inferred from neighbouring domains or from what this domain explicitly delegates to other modules
+- **Success indicators**: measurable outcomes inferred from the domain's apparent purpose (e.g., "Users can browse and enter competitions end to end", not "CompetitionViewSet returns 200")
+
+**Mandatory content rule**: The drafted `### Product Brief` MUST NOT contain raw class names, module paths with slashes, Django/Flask/Express/FastAPI terminology, or any other implementation detail. Rewrite every element until this passes — if a bullet cannot be expressed without a technical term, rephrase it or omit it.
+
+**When no signal is found (confidence would be LOW)**: skip the Product Brief entirely. Do NOT write a placeholder or stub. Omission is correct.
+
+Store the drafted content (or the skip decision) in memory, keyed by domain name. Step 5.3 inserts the `### Product Brief` block into the node body and adds `product_brief` to `inferred_fields` when content was drafted.
+
 ### Step 2c.4 — Draft and save business documents
 
 For each item in your ADR list:
@@ -274,11 +317,24 @@ For each item in your Runbook list:
 4. Write to `.handoff/output/nodes/<id>.md`
 5. Add index entry with `doc_type: "runbook"`
 
-If an API contract file was found:
-1. Draft the API Summary using the template in `diagram-methodology.md` § 3.4
+If `contract_file_found = true` (API contract file path):
+1. Draft the API Summary using the contract-file template in `diagram-methodology.md` § 3.5
 2. Use id: `api-summary`
-3. Write to `.handoff/output/nodes/api-summary.md`
-4. Add index entry with `doc_type: "api_summary"`
+3. `code_refs` is optional — emit only if the contract file specifies `x-source-file` extensions or operation IDs resolvable to source lines
+4. Write to `.handoff/output/nodes/api-summary.md`
+5. Add index entry with `doc_type: "api_summary"`
+
+If `source_route_file_found = true` AND `contract_file_found = false`:
+1. Draft the API Summary using the source-code template in `diagram-methodology.md` § 3.5
+2. For each endpoint extracted in Step 2c.3:
+   a. Write a row in `## Endpoints / Operations` — method, path, plain-English description (from docstring/comment), params, response fields, auth requirement
+   b. Group under an H3 sub-heading when more than 3 endpoints share a path prefix (e.g., `### Competition Endpoints` for `/api/competitions/*`)
+   c. Build one `code_refs` entry: `{file, line, end_line, note: "METHOD /path — description"}` using the handler location recorded in Step 2c.3
+3. **`code_refs` is REQUIRED for source-code-generated api_summary** — one entry per endpoint. Validate CR-01 through CR-05 on every entry before saving.
+4. Validate that every endpoint row in `## Endpoints / Operations` has a corresponding `code_refs` entry (same count, same order).
+5. Use id: `api-summary`
+6. Write to `.handoff/output/nodes/api-summary.md`
+7. Add index entry with `doc_type: "api_summary"`
 
 **Note**: Do NOT save the Onboarding Guide here. It is saved in Part 5c.4 after all domain nodes are complete.
 
@@ -557,6 +613,7 @@ inferred_fields:
   [- depth]
   [- decisions]
   [- warnings]
+  [- product_brief]   # include when Step 2c.3c drafted a Product Brief for this domain
 confidence_tags:
   business_context: <high | medium | low>
   [depth: <high | medium | low>]
@@ -573,6 +630,25 @@ quality_score:   # values filled in by Part 5d after assembly — leave as place
 ## Business Context
 
 <Inferred business context — 2–4 sentences. Each sentence ends with a citation: see "Citation rendering" below.>
+
+[If Step 2c.3c drafted a Product Brief for this domain, insert immediately after the Business Context opening paragraph(s) — before ## Technical Context:]
+
+### Product Brief
+
+**Problem**: <one paragraph — the user pain or business gap this domain addresses>
+
+**Target users**: <who uses this feature — role or persona in plain English>
+
+**Capabilities**:
+- <user-facing outcome 1>
+- <user-facing outcome 2>
+- ...
+
+**Out of scope**: <what this domain intentionally does NOT do>
+
+**Success indicators**: <measurable outcomes the domain is meant to achieve>
+
+[End Product Brief block — omit entirely when Step 2c.3c found no signal or skipped]
 
 ## Technical Context
 
@@ -703,6 +779,12 @@ Apply the validation rules from `.handoff/toolkit/rules/output-schema.md` to the
 - **Snippet/ref consistency** — every inline snippet in the body MUST have a corresponding `code_refs` entry whose `file`/`line`/`end_line` match the snippet's path and line range, and vice versa. They are generated from the same Step 3.7 data and must not drift.
 - **OP-10 and OP-11** are deprecated — skip (no `code_refs[].id` is emitted; the extension navigates by `file`+`line`)
 - **OP-13** is advisory — if `depth` is `core` or `supporting` and `## Technical Context` is present but has no inline snippet, log: "Advisory (OP-13): Technical Context has no inline snippets" but do NOT fail validation
+
+**`### Product Brief` consistency checks** (fix before saving, do not ask the giver):
+- If `### Product Brief` is present in the body, verify `product_brief` is in `inferred_fields`. If missing, add it.
+- If `product_brief` is in `inferred_fields` but no `### Product Brief` subsection is in the body, this is a drift error — either add the missing subsection or remove `product_brief` from `inferred_fields`. Prefer removing if Step 2c.3c did not produce content.
+- Verify no capability bullet in `### Product Brief` contains a backtick, a forward slash `/`, or a framework class/method name. If found, rewrite the bullet to express the user-facing outcome in plain English.
+- If Step 2c.3c found no signal (skipped), verify `### Product Brief` is absent entirely — no placeholder text permitted.
 
 **If all mandatory rules pass**: proceed to Step 5.5.
 

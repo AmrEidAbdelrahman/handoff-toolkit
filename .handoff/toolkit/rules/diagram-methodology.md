@@ -318,13 +318,54 @@ N. [<Supporting Node Title>](nodes/<id>.md)
 
 ---
 
-### 3.4 — API Summary
+### 3.4 — Product Brief (H3 subsection within `## Business Context`)
+
+**Purpose**: Provides a PRD-style business narrative for domains that have a user-facing product story. Written entirely in plain English — no code identifiers, module paths, or framework terminology. Placed as an H3 subsection inside `## Business Context` after the opening paragraph(s).
+
+**Not a separate node** — this is always part of a `handover_node`, never a standalone document. See Rule OP-17 in `output-schema.md` for the full convention.
+
+**Template** (insert after `## Business Context` opening paragraph):
+
+```markdown
+### Product Brief
+
+**Problem**: <One paragraph: the user pain or business gap this domain addresses. Written for a non-technical stakeholder. No class names, method names, or file paths.>
+
+**Target users**: <Who uses this feature — describe by role or persona (e.g., "Competition participants", "Platform administrators"), not by system actor.>
+
+**Capabilities**:
+- <User-facing outcome 1 — what the user can DO, not what the code does>
+- <User-facing outcome 2>
+- <... one bullet per major capability>
+
+**Out of scope**: <What this domain intentionally does NOT handle — inferred from neighbouring domains or from what the code clearly delegates elsewhere.>
+
+**Success indicators**: <Measurable outcomes this domain is meant to achieve, expressed in user/business terms (e.g., "Users can browse and enter competitions without contacting support").>
+```
+
+**Inference trigger** (conditional — only produce when triggered):
+
+Produce a `### Product Brief` subsection when at least ONE of the following signals is present for the domain:
+- Signal A (HIGH confidence): The domain has ≥1 discoverable HTTP endpoint (detected in Step 2c.3)
+- Signal B (MEDIUM confidence): The domain's module/directory name is a recognisable business noun — NOT any of: `utils`, `migrations`, `admin`, `config`, `tests`, `middleware`, `helpers`, `common`, `base`, `core` (these are infrastructure names)
+
+If NEITHER signal is found, omit the subsection entirely. Do not produce placeholder text.
+
+**Mandatory content rules**:
+- Every capability bullet MUST describe a user action or outcome, not a function call
+- No bullet may start with a backtick or contain a `/` (file path) or `.` followed by a method name
+- `product_brief` MUST be added to `inferred_fields` in the node frontmatter
+- The subsection MUST be omitted (not left empty) when confidence is LOW
+
+---
+
+### 3.5 — API Summary
 
 **`doc_type: api_summary`**
 
-**Purpose**: Summarises the project's exposed APIs for consumers who need to integrate with or call the project.
+**Purpose**: Summarises the project's exposed APIs for consumers who need to integrate with or call the project. Can be generated from a formal contract file (OpenAPI, Swagger, etc.) or directly from source-code route definitions when no contract file exists.
 
-**Template**:
+**Template — contract-file path** (existing behaviour, `code_refs` optional):
 
 ```markdown
 ---
@@ -345,16 +386,66 @@ doc_type: api_summary
 <How callers authenticate. Be specific: token type, header name, OAuth flow, API key location, etc.>
 ```
 
+**Template — source-code path** (`code_refs` REQUIRED, one entry per endpoint):
+
+```markdown
+---
+id: api-summary
+title: "API Summary: <Project Name>"
+depth: supporting
+schema_version: 1
+doc_type: api_summary
+code_refs:
+  - file: <handler file path, relative to project root>
+    line: <handler function start line>
+    end_line: <handler function end line, or start + 15 max>
+    note: "METHOD /path — one-line description"
+  # ... one entry per endpoint
+---
+
+## Overview
+<What APIs are exposed, to whom, and for what purpose. Sentences carry (src: …) citations.>
+
+## Endpoints / Operations
+
+### <Resource Group> (use H3 when >3 endpoints share a path prefix; omit grouping otherwise)
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET    | /resource/ | <one-sentence description> | Required |
+| POST   | /resource/ | <one-sentence description> | Required |
+
+<For each endpoint, follow the table row with a detail block:>
+
+**METHOD /path** — <one-sentence description> *(navigable in VS Code reader)*
+- Request params: <name (type, required/optional)>, ...
+- Response: <key fields and their types>
+- Auth: <requirement or "None">
+
+## Authentication
+<How callers authenticate. Token type, header name, OAuth flow, API key location.>
+```
+
 **Detection trigger** (conditional — produce only when triggered):
 
-Produce an API Summary if and only if any of the following files exist in the project:
+**Primary trigger** (contract file): Produce an API Summary if any of the following exist:
 - `openapi.yaml` or `openapi.json` (at any depth in the repo)
 - `swagger.yaml` or `swagger.json`
 - `schema.graphql` or `*.graphql` in a `schema/` or `api/` directory
 - `api.yaml` or `api.json` at the project root
 - A proto file (`*.proto`) in any directory
 
-If none of these files exist, do not produce an API Summary. Do not fabricate endpoint information.
+**Secondary trigger** (source code — fallback when no contract file found): Produce an API Summary using the source-code path if any of the following route patterns exist in the domain directory or project root:
+- Django: `urls.py` in the domain directory or project root URL conf
+- Express/Fastify: `routes.js`, `router.js`, or any `.js`/`.ts` file that imports `express.Router` or `fastify`
+- Flask: any `.py` file containing `Blueprint(` or `@app.route(`
+- FastAPI: any `.py` file containing `APIRouter(` or `@app.get(`, `@app.post(`, `@app.put(`, `@app.delete(`, `@app.patch(`
+
+When the secondary trigger fires, read the route file (counts toward the 8-file domain cap) and extract: HTTP method, path pattern, handler/view reference. Then read each handler function (5–15 lines per Step 3.7 snippet rules) to extract: docstring or first comment (description), parameter names, return shape indicator. Build `code_refs` from handler file+line data.
+
+**Group endpoints** under H3 sub-headings when ≥3 endpoints share a path prefix (e.g., `/competitions/` → `### Competitions`). List flat otherwise.
+
+**Do not fabricate** endpoint information. If the route file cannot be parsed to extract structured endpoint data, omit the API Summary.
 
 **Naming convention**: Always `api-summary.md`.
 

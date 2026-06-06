@@ -52,7 +52,7 @@ If `code_refs` is present, check every item:
 
 **Rule OP-03**: If `generated_at` is present, it must be a valid ISO 8601 datetime string (e.g., `2026-05-23T14:30:00Z`).
 
-**Rule OP-04**: If `inferred_fields` is present, it must be an array. Each element must be one of the following exact string values: `business_context`, `depth`, `decisions`, `warnings`. Any other value fails this rule.
+**Rule OP-04**: If `inferred_fields` is present, it must be an array. Each element must be one of the following exact string values: `business_context`, `depth`, `decisions`, `warnings`, `product_brief`. Any other value fails this rule.
 
 **Rule OP-05**: `inferred_fields` is optional. Its presence or absence does not affect whether a node passes or fails validation. A node with a non-empty `inferred_fields` array is still schema-valid. However, once all fields listed in `inferred_fields` have been confirmed by the giver via `/handoff-review`, `inferred_fields` must be absent or set to an empty array `[]` before the node is considered fully reviewed.
 
@@ -76,7 +76,7 @@ If `code_refs` is present, check every item:
 
 - **`doc_type: onboarding_guide`**: Body must contain `## Project Summary`, `## Reading Order`, and `## Related Documents` sections (exact text, H2, in that order). Each must be non-empty. `## Reading Order` must contain at least one numbered list item that is a Markdown link.
 
-- **`doc_type: api_summary`**: Body must contain `## Overview`, `## Endpoints / Operations`, and `## Authentication` sections (exact text, H2, in that order). Each must be non-empty.
+- **`doc_type: api_summary`**: Body must contain `## Overview`, `## Endpoints / Operations`, and `## Authentication` sections (exact text, H2, in that order). Each must be non-empty. When the node was generated from source-code route detection (rather than from a contract file such as OpenAPI/Swagger/proto), `code_refs` is REQUIRED in the frontmatter — one entry per endpoint, with `note` set to `"METHOD /path — one-line description"`. When generated from a contract file, `code_refs` is optional.
 
 - **`doc_type: config_reference`**: Body must contain `## Overview` and `## Variables` sections (exact text, H2, in that order). Each must be non-empty. `## Variables` must contain a Markdown table (or a structured list) with at least one variable row. No literal secret value may appear anywhere in the body — a variable whose name indicates a secret must be listed but never have its value quoted.
 
@@ -90,7 +90,9 @@ For all typed documents: H1 headings are still prohibited (Rule BD-07 applies). 
 
 **Rule OP-15**: If `confidence_tags` is present, it must be a YAML mapping. Each value must be exactly one of the strings `high`, `medium`, or `low`. Any other value fails this rule. Each key SHOULD be a field name that also appears in the node's `inferred_fields` array (a key for a field not in `inferred_fields` is an authoring inconsistency, not a hard failure). When all inferred fields have been confirmed via `/handoff-review`, `confidence_tags` must be absent or an empty mapping. Absence of `confidence_tags` is valid — nodes generated before feature 004 are not required to have this field.
 
-**Rule OP-16**: Advisory. A `handover_node` MAY include the following conventional H3 subsections within its `## Technical Context` section: `### Dependencies & Integrations`, `### Testing` (feature 005), `### Related`, and `### Ownership` (feature 006). These are the only conventional H3 subsection names introduced by the toolkit; their presence or absence does not affect validation. These H3 subsections do NOT violate Rule BD-09 (which constrains only H2 headings) or Rule BD-07 (H1). This rule documents the convention so validators recognise these headings as expected, not as schema violations.
+**Rule OP-16**: Advisory. A `handover_node` MAY include the following conventional H3 subsections within its `## Technical Context` section: `### Dependencies & Integrations`, `### Testing` (feature 005), `### Related`, and `### Ownership` (feature 006). These are the only conventional H3 subsection names introduced by the toolkit for `## Technical Context`; their presence or absence does not affect validation. These H3 subsections do NOT violate Rule BD-09 (which constrains only H2 headings) or Rule BD-07 (H1). This rule documents the convention so validators recognise these headings as expected, not as schema violations.
+
+**Rule OP-17**: Advisory. A `handover_node` MAY include a `### Product Brief` H3 subsection within its `## Business Context` section. This is the only conventional H3 subsection name introduced for `## Business Context`. Its presence does not violate BD-09 or BD-07. When present, `### Product Brief` MUST follow the `## Business Context` opening paragraph(s) and MUST contain the following five elements in order: (1) `**Problem**:` — one paragraph describing the user pain or business gap; (2) `**Target users**:` — who uses this feature; (3) `**Capabilities**:` — a bulleted list of user-facing outcomes (no code identifiers, module paths, or framework terminology); (4) `**Out of scope**:` — what the domain intentionally does not do; (5) `**Success indicators**:` — measurable outcomes. When `### Product Brief` content was AI-inferred, `product_brief` MUST appear in the node's `inferred_fields` array (per OP-04). If a confident product narrative cannot be inferred, the subsection MUST be omitted entirely — no placeholder text.
 
 ---
 

@@ -7,6 +7,7 @@
     { "id": "authentication", "title": "Authentication", "depth": "core", "dependencies": ["error-handling"], "file": "nodes/authentication.md" },
     { "id": "error-handling", "title": "Error Handling", "depth": "supporting", "dependencies": [], "file": "nodes/error-handling.md" },
     { "id": "dev-environment", "title": "Dev Environment", "depth": "peripheral", "dependencies": [], "file": "nodes/dev-environment.md" },
-    { "id": "jwt-internals", "title": "JWT Internals", "depth": "supporting", "dependencies": [], "file": "nodes/jwt-internals.md" }
+    { "id": "jwt-internals", "title": "JWT Internals", "depth": "supporting", "dependencies": [], "file": "nodes/jwt-internals.md" },
+    { "id": "api-summary", "title": "API Summary", "depth": "supporting", "dependencies": [], "file": "nodes/api-summary.md", "doc_type": "api_summary" }
   ]
 }

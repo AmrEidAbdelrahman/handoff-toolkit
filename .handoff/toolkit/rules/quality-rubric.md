@@ -22,27 +22,31 @@ Only values 1 and 2 may appear in the saved `quality_score` frontmatter. A 0 is 
 
 | Dimension | handover_node | adr | runbook | onboarding_guide | api_summary | architecture-overview | config_reference | glossary |
 |---|---|---|---|---|---|---|---|---|
-| `business_value_clarity` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `business_value_clarity` | ✓ ¹ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `why_coverage` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `snippet_relevance` | ✓ | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| `snippet_relevance` | ✓ | N/A | N/A | N/A | N/A ² | N/A | N/A | N/A |
 | `actionability` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `no_unsupported_claims` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 For a dimension marked **N/A**, omit its key from `quality_score` entirely — do not write `0`, do not write `N/A` as a value.
 
+¹ For `handover_node` documents that contain a `### Product Brief` subsection, `business_value_clarity` covers both the `## Business Context` opening paragraph AND the `### Product Brief` content. See the dimension description below.
+
+² `snippet_relevance` is N/A for `api_summary` even when the summary includes inline code — the inline code in api_summary is structural (handler file references), not illustrative snippets. Do not add `snippet_relevance` to an api_summary node's `quality_score`.
+
 ---
 
 ## Dimension 1 — `business_value_clarity`
 
-**Section(s)**: `## Business Context` (for typed docs: `## Context` / `## Purpose` / `## Project Summary` / `## Overview` as applicable).
+**Section(s)**: `## Business Context` (for typed docs: `## Context` / `## Purpose` / `## Project Summary` / `## Overview` as applicable). For `handover_node` documents with a `### Product Brief` subsection, this dimension also covers the Product Brief's **Capabilities** list.
 
-**Score 0 trigger (mechanical)**: The section contains **zero sentences that name a user-facing or business outcome**. Concretely: no sentence states what a user can do, what the business gains, or what would break for a user/the business if this stopped working. A section that only describes code structure ("this module contains three classes that handle requests") scores 0.
+**Score 0 trigger (mechanical)**: The section contains **zero sentences that name a user-facing or business outcome**. Concretely: no sentence states what a user can do, what the business gains, or what would break for a user/the business if this stopped working. A section that only describes code structure ("this module contains three classes that handle requests") scores 0. **Additionally, for `### Product Brief`**: if every capability bullet states only WHAT the system does (e.g., "The system exposes a list endpoint") without a user benefit — no "so that", "enabling", "allowing", or equivalent phrasing — the trigger is also met and a rewrite is required.
 
-**Score 1**: At least one sentence names a user-facing or business outcome.
+**Score 1**: At least one sentence names a user-facing or business outcome. If `### Product Brief` is present, at least one capability bullet names a user-facing outcome (not just a system action).
 
-**Score 2**: The section names the outcome AND states what breaks for users if the domain disappeared (the "stakes" sentence).
+**Score 2**: The section names the outcome AND states what breaks for users if the domain disappeared (the "stakes" sentence). If `### Product Brief` is present, every capability bullet includes user-benefit language.
 
-**Rewrite action on 0**: Add at least one sentence answering "what does this do for a user or the business?" Draw on README, model names, or route names. If no signal exists, the field should already be in `inferred_fields` with a `(src: inferred)` citation — keep it, but still phrase it as a user-facing outcome.
+**Rewrite action on 0**: Add at least one sentence answering "what does this do for a user or the business?" Draw on README, model names, or route names. If the failure is in `### Product Brief` capabilities, rewrite the bare WHAT bullets into user-outcome phrasing (e.g., "Browse and filter active competitions" instead of "Lists competitions"). If no signal exists, the field should already be in `inferred_fields` with a `(src: inferred)` citation — keep it, but still phrase it as a user-facing outcome.
 
 ---
 
@@ -92,13 +96,15 @@ For a dimension marked **N/A**, omit its key from `quality_score` entirely — d
 
 **Section(s)**: `## Business Context`, `## Decisions`, `## Warnings` (and the prose sections of typed docs).
 
-**Score 0 trigger (mechanical)**: **Any sentence in these sections lacks a trailing `(src: …)` citation.** This is a literal check — scan each sentence; if it does not end with `(src: …)`, the dimension scores 0. (Sentences that are genuine inferences with no specific source must still carry `(src: inferred)` — absence of any citation is the failure, not the use of `inferred`.)
+**Citation exemption — `### Product Brief`**: The `### Product Brief` subsection, when present inside `## Business Context`, is treated as a **structured business narrative block** — analogous to `## Technical Context` prose — and is **citation-exempt**. Its bold-label paragraphs and capability bullets do NOT require trailing `(src: …)` citations. Their absence does NOT trigger a score-0. The `product_brief` entry in `inferred_fields` and `confidence_tags` (set by Step 2c.3c) is the traceability mechanism for this block, not per-sentence citations.
 
-**Score 1**: Every sentence in these sections carries a `(src: …)` citation.
+**Score 0 trigger (mechanical)**: **Any sentence in the cited sections (`## Business Context` opening paragraph(s), `## Decisions`, `## Warnings`) lacks a trailing `(src: …)` citation.** This is a literal check — scan each sentence; if it does not end with `(src: …)`, the dimension scores 0. (Sentences that are genuine inferences with no specific source must still carry `(src: inferred)` — absence of any citation is the failure, not the use of `inferred`.) **Do NOT scan `### Product Brief` content for missing citations** — it is exempt per the rule above.
+
+**Score 1**: Every sentence in the cited sections carries a `(src: …)` citation.
 
 **Score 2**: Every sentence is cited AND no more than one sentence per section rests on `(src: inferred)` (i.e., most claims trace to a concrete source, not a guess).
 
-**Rewrite action on 0**: Add the missing citation to each uncited sentence. If the sentence cannot be traced to any source, append `(src: inferred)` and ensure the enclosing field is listed in `inferred_fields` with `confidence: low` (see the three-way link rule in handoff-start Step 5.2 / Step 5.3).
+**Rewrite action on 0**: Add the missing citation to each uncited sentence in the cited sections. If the sentence cannot be traced to any source, append `(src: inferred)` and ensure the enclosing field is listed in `inferred_fields` with `confidence: low` (see the three-way link rule in handoff-start Step 5.2 / Step 5.3).
 
 ---
 

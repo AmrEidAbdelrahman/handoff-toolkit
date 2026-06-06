@@ -116,6 +116,21 @@ Warnings  <label>           (omit this block if the Warnings section is absent)
 
 Showing the confidence level tells the giver why this node surfaced early (the queue is sorted low → high) and where their scrutiny matters most: `low` fields rest on weak signals (directory/file names) and are the most likely to be wrong.
 
+### `product_brief` field handling
+
+When a node has `product_brief` in `inferred_fields`, display the `### Product Brief` subsection content (found inside `## Business Context`) with the label `[AI-guessed · <confidence>]`. After displaying, ask the giver three targeted confirmation prompts before the main confirm/skip/rewrite prompt:
+
+```
+Product Brief — please verify:
+  1. Is the problem statement accurate? (y / edit)
+  2. Is the target user description accurate? (y / edit)
+  3. Are the capabilities listed correctly? (y / edit)
+```
+
+For each prompt where the giver responds "edit" (or types replacement text), update the corresponding element in the `### Product Brief` block. For prompts where the giver responds "y", keep the current content. Once all three are answered (or the giver presses Enter to accept all), proceed to the standard confirm/skip/rewrite prompt for the rest of the node's inferred fields.
+
+On final confirm (Enter), remove `product_brief` from `inferred_fields` and `confidence_tags` along with the other confirmed fields.
+
 ### Typed document display
 
 For nodes where `doc_type` is `adr`, `runbook`, `onboarding_guide`, `api_summary`, `config_reference`, or `glossary`, the body sections differ from the standard `handover_node` sections (`## Business Context`, `## Technical Context`). Display whichever sections are present in the node file, using the same label rules above. Do not require the standard four sections — use the actual section headings as they appear in the node body.
@@ -153,7 +168,7 @@ Wait for the giver's input. Handle each option as follows:
 
 ### On 'r' (rewrite)
 
-1. Ask: "Which field? (business_context / depth / decisions / warnings)"
+1. Ask: "Which field? (business_context / product_brief / depth / decisions / warnings)"
 2. Wait for the giver's choice. If the field is not in `inferred_fields`, note: "That field is already marked as read from code. You can still edit it — continue? (y/n)"
 3. Show the current content of that field.
 4. Ask: "New content (or press Enter to keep current):"
@@ -186,6 +201,43 @@ Run /handoff-review again to continue from where you left off.
 - Stop. Do not process any more nodes.
 
 ---
+
+## Part 4b — Product Brief Coverage Check
+
+After completing the inferred-fields walkthrough for a node (after the confirm/skip/rewrite prompt in Part 4), run this coverage check if the node has a `### Product Brief` subsection.
+
+### When to run
+
+Run this check when:
+- The node has a `### Product Brief` subsection in `## Business Context`, AND
+- The node's `## Technical Context` body is present and non-empty
+
+### Coverage check procedure
+
+1. Extract the **Capabilities** bullets from `### Product Brief` (the bulleted list under the `**Capabilities**:` label).
+2. For each capability bullet, scan the `## Technical Context` body for a related concept — a keyword, phrase, or module reference that corresponds to the capability's subject.
+3. Collect capabilities that have **no evident Technical Context coverage** (no related term found in the Technical Context body).
+4. Present the findings after the walkthrough completes:
+
+```
+── Product Brief Coverage Check ──────────────────────────
+The following capabilities in ### Product Brief were not
+evidently covered in ## Technical Context:
+
+  ⚠ "<capability text>" — no related term found in Technical Context
+  ⚠ "<capability text>" — no related term found in Technical Context
+
+These are potential coverage gaps. They may indicate:
+  - A capability that is implemented elsewhere (another domain node)
+  - A capability that is described at a higher level than the code signals
+  - A genuine documentation gap worth noting
+
+No action required — this is informational only.
+──────────────────────────────────────────────────────────
+```
+
+5. If all capabilities are covered (a related term was found for each), print nothing for this check.
+6. This check is **advisory only** — it never blocks confirmation, never modifies the node, and never marks the review as failed.
 
 ## Part 5 — Completion
 
