@@ -27,6 +27,7 @@ export interface IndexEntry {
   title: string;
   depth: Depth;
   dependencies: string[];
+  parent?: string;
   file: string;
 }
 

@@ -82,6 +82,7 @@ generated_at: ISO 8601 datetime
 
 | Field | Type | Description | Validation |
 |-------|------|-------------|------------|
+| `parent` | string | The `id` of the parent node in the same output. Absence means root-level. Parent/grouping nodes have no `parent`; leaf nodes reference their grouping node's `id`. | Must match `^[a-z0-9]+(-[a-z0-9]+)*$`. Must not equal the node's own `id`. Must not create a cycle. Must not be set on reserved root nodes (`project-overview`, `technical-overview`). |
 | `dependencies` | array of strings | IDs of other nodes this section relates to. | Each value must be a valid node `id` that exists in the index. |
 | `tags` | array of strings | Freeform tags for filtering and grouping. | Lowercase, hyphenated. Max 10 tags. |
 | `generated_at` | string | When this node was generated or last updated. | ISO 8601 format: `2026-05-23T14:30:00Z` |
@@ -150,11 +151,23 @@ The index file is the master manifest of all nodes. The extension reads this fir
       "title": "string",
       "depth": "core | supporting | peripheral",
       "dependencies": ["string"],
+      "parent": "string (optional — id of parent node; absent means root-level)",
       "file": "nodes/{id}.md"
     }
   ]
 }
 ```
+
+### Reserved Root Nodes
+
+Two node IDs are reserved and always expected to be present in toolkit-generated output:
+
+| ID | Depth | Parent |
+|----|-------|--------|
+| `project-overview` | `core` | none (always root-level) |
+| `technical-overview` | `core` | none (always root-level) |
+
+These nodes are pinned at the top of the sidebar tree. They must never have a `parent` field set.
 
 ### Index Rules
 
@@ -162,6 +175,7 @@ The index file is the master manifest of all nodes. The extension reads this fir
 - Every entry in the index must have a corresponding file in `nodes/`
 - Nodes are ordered: `core` first, then `supporting`, then `peripheral`
 - Within each depth level, order is determined by the toolkit (typically by logical dependency)
+- If a node entry has a `parent` field, it must reference the `id` of another entry in the same index; a missing reference is a warning (the node is rendered at root level), not an error
 
 ---
 
@@ -199,6 +213,7 @@ These rules define what makes a node valid. The toolkit should validate before w
 7. If `dependencies` is present, each value is a non-empty string
 8. If `line` is present in a `code_ref`, it is a positive integer
 9. If `end_line` is present, `line` must also be present and `end_line >= line`
+10. If `parent` is present, it must be a non-empty string matching `^[a-z0-9]+(-[a-z0-9]+)*$`, must not equal the node's own `id`, must not create a circular reference chain, and must not be set on the reserved root ids `project-overview` or `technical-overview`
 
 ### Body Validation
 
@@ -217,6 +232,8 @@ These rules define what makes a node valid. The toolkit should validate before w
 4. Every `file` value points to an existing file in `nodes/`
 5. No duplicate `id` values
 6. Every `.md` file in `nodes/` has a corresponding index entry
+7. If a node entry has a `parent` field, the referenced `id` must exist elsewhere in the index (missing reference → warning; node renders at root level)
+8. Reserved root node ids (`project-overview`, `technical-overview`) must not have a `parent` field set
 
 ---
 
@@ -232,6 +249,7 @@ id: authentication
 title: Authentication & Session Management
 depth: core
 schema_version: 1
+parent: modules
 code_refs:
   - file: src/auth/index.ts
     line: 1
@@ -407,10 +425,32 @@ Setup is: copy `.env.example` to `.env`, run `docker-compose up`, then `npm run 
   "generated_at": "2026-05-23T14:45:00Z",
   "nodes": [
     {
+      "id": "project-overview",
+      "title": "Project Overview",
+      "depth": "core",
+      "dependencies": [],
+      "file": "nodes/project-overview.md"
+    },
+    {
+      "id": "technical-overview",
+      "title": "Technical Overview",
+      "depth": "core",
+      "dependencies": [],
+      "file": "nodes/technical-overview.md"
+    },
+    {
+      "id": "modules",
+      "title": "Modules",
+      "depth": "supporting",
+      "dependencies": [],
+      "file": "nodes/modules.md"
+    },
+    {
       "id": "authentication",
       "title": "Authentication & Session Management",
       "depth": "core",
       "dependencies": ["user-management", "database"],
+      "parent": "modules",
       "file": "nodes/authentication.md"
     },
     {
@@ -418,6 +458,7 @@ Setup is: copy `.env.example` to `.env`, run `docker-compose up`, then `npm run 
       "title": "API Error Handling & Response Format",
       "depth": "supporting",
       "dependencies": ["authentication"],
+      "parent": "modules",
       "file": "nodes/api-error-handling.md"
     },
     {

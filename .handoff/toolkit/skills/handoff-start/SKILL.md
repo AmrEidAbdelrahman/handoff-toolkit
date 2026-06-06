@@ -104,6 +104,86 @@ Print a brief status line: "Identified N business domains. Documenting autonomou
 
 ---
 
+### Step 2.4 — Infer tree shape and write proposed_tree
+
+Run immediately after Step 2.3. Use the domains and manifest files already read in Steps 2.1–2.3 — no extra file reads required.
+
+**Goal**: Decide what parent/grouping nodes to create and which domain nodes sit under which parent. Write the result as `proposed_tree` in `session.json`.
+
+#### 2.4.1 — Detect project type
+
+Apply the following signals in order and stop at the first match:
+
+**Backend API** (Django, Express, Flask, Rails, FastAPI, etc.):
+Signals: presence of `urls.py`, `routes.*`, `router.*`, `views.*`, `controllers.*` in multiple directories, OR an HTTP framework name in `package.json`/`pyproject.toml`/`Gemfile`.
+Groupings: `modules` (one per business domain), `api` (route groups), `infrastructure` (database, deployment, dev setup).
+
+**React / Vue / Angular frontend**:
+Signals: `components/`, `pages/`, `views/` directories at the source level, OR `react`/`vue`/`@angular/core` in `package.json` dependencies.
+Groupings: `pages` (if page/screen directories exist), `components` (component systems), `state-management` (if a store or context directory is found), `infrastructure` (routing, api-client, build config).
+
+**Microservices**:
+Signals: multiple independent `package.json`/`pyproject.toml`/`Cargo.toml`/`go.mod` at the second directory level, OR multiple Docker Compose service definitions with distinct source directories.
+Groupings: each service becomes a root-level parent; each service parent gets `modules` and `api` children inside it; `infrastructure` is a shared root-level parent for cross-service concerns.
+
+**Library / SDK / Package**:
+Signals: a single `src/` or `lib/` directory, no route files, no UI component directories, a `README` describing a public API.
+Groupings: `core` (primary library logic), `api` (public surface area), `infrastructure` (build, CI, dev tooling).
+
+**Fallback**:
+When no pattern is confidently matched, use the minimal tree: `project-overview` and `technical-overview` only. All domain nodes are root-level (no `parent`). Print a note: "Tree auto-classification not possible for this project — documenting as flat structure."
+
+#### 2.4.2 — Construct proposed_tree
+
+Build a flat map `{ node-id → parent-id | null }`:
+
+1. Always include: `"project-overview": null` and `"technical-overview": null`.
+2. For each grouping category determined in 2.4.1 (e.g., `modules`, `api`, `infrastructure`): add `"<category>": null` (root-level grouping node).
+3. For each domain in `pending_sections`: derive a node id (lowercase hyphenated form of the domain name, e.g., "User Management" → `user-management`) and assign it under the appropriate grouping. For Backend API projects, domain nodes go under `modules`. For frontend projects, domain nodes go under their matching grouping (`pages`, `components`, etc.) based on what their directory contains.
+4. For sub-domains (e.g., a domain with sub-features identified in Step 2.2): add nested entries where the sub-domain's parent is the domain node id.
+
+Example for a Node.js API project with User Management, Competition, and Infrastructure domains:
+```json
+{
+  "project-overview": null,
+  "technical-overview": null,
+  "modules": null,
+  "user-management": "modules",
+  "competition": "modules",
+  "api": null,
+  "user-endpoints": "api",
+  "competition-endpoints": "api",
+  "infrastructure": null,
+  "database": "infrastructure",
+  "dev-environment": "infrastructure"
+}
+```
+
+#### 2.4.3 — Write proposed_tree to session.json
+
+Add the `proposed_tree` key to the existing `session.json` object and write it. Do not replace the full session.json — merge the new key in.
+
+Also add a `grouping_nodes` list to session.json — the set of ids that appear only as parent values (not as domain sections). These need to be generated as grouping nodes in 2.4.4.
+
+Example addition to session.json:
+```json
+"proposed_tree": { ... },
+"grouping_nodes": ["modules", "api", "infrastructure"]
+```
+
+#### 2.4.4 — Generate grouping nodes
+
+For each id in `grouping_nodes`: generate and write a full handover node file immediately. Grouping nodes:
+- Have `depth: supporting` (or `core` for the primary business/technical groupings like `modules`)
+- Have no `parent` (they are root-level, under the pinned overviews conceptually but not nested under them in the tree)
+- Have no `code_refs` (grouping nodes describe a layer, not a specific file)
+- Have `## Business Context`: explain WHY this layer exists from a product and architectural perspective — what problem it solves, what value it organises
+- Have `## Technical Context`: describe HOW the pieces within this layer relate to each other — shared patterns, interaction model, entry points
+
+Write the node file to `.handoff/output/nodes/<id>.md` and add the entry to `index.json` before any domain leaf nodes that reference it as a parent.
+
+---
+
 ## Part 2d — Git History Analysis (run once, immediately after Step 2.3, before Part 2a)
 
 Run Part 2d exactly once per fresh session and at the start of a delta re-run (Part 4). **If `git_available` is false (Step 1.3), skip Part 2d entirely** — all consumers (hotspot warnings, ownership notes, tribal-knowledge warnings) then produce nothing, with no error. Compute the three result sets below and store them in memory, grouped by domain using the `directories` recorded in `pending_sections`.
@@ -599,6 +679,7 @@ id: <id>
 title: <domain name>
 depth: <core | supporting | peripheral>
 schema_version: 1
+parent: <parent-id from proposed_tree, if non-null — omit the field entirely if null/absent>
 generated_at: <current ISO 8601 timestamp>
 code_refs:
   # One entry per inline snippet collected in Step 3.7 — these make the code
@@ -807,7 +888,7 @@ Read `.handoff/output/index.json` if it exists. If it does not exist, create it 
 }
 ```
 
-Add the new node as an entry in the `nodes` array:
+Add the new node as an entry in the `nodes` array. Include the `parent` field if `proposed_tree[id]` is non-null:
 
 ```json
 {
@@ -815,6 +896,7 @@ Add the new node as an entry in the `nodes` array:
   "title": "<section name>",
   "depth": "<depth>",
   "dependencies": [],
+  "parent": "<parent-id from proposed_tree — omit this key entirely if null/absent>",
   "file": "nodes/<id>.md"
 }
 ```

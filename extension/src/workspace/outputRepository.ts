@@ -6,7 +6,7 @@ import { loadIndex } from '../handoff/indexLoader';
 import { parseNode } from '../handoff/nodeParser';
 import { buildTree, flattenReadingOrder, fromIndexEntries } from '../handoff/tree';
 import { IndexManifest, ParsedNode, TreeNode, ValidationIssue } from '../handoff/types';
-import { crossCheckIndex, validateDependencies } from '../handoff/validation';
+import { crossCheckIndex, crossCheckParents, validateDependencies } from '../handoff/validation';
 import { HandoffLocation } from './detector';
 
 export interface Handover {
@@ -82,13 +82,17 @@ export async function loadHandover(loc: HandoffLocation): Promise<LoadResult> {
 
   // Cross-file validation (index ↔ files, dependencies, parents).
   topIssues.push(...crossCheckIndex(manifest.nodes, presentIds));
+  topIssues.push(...crossCheckParents(manifest.nodes));
   const knownIds = new Set(nodeById.keys());
   for (const node of nodes) {
     node.issues.push(...validateDependencies(node, knownIds));
   }
 
-  // Build the tree from index order, attaching parent info from parsed nodes.
-  const parentById = new Map(nodes.map((n) => [n.id, n.parent]));
+  // Build the tree from index order, preferring parent from parsed node file; fall
+  // back to the index entry so the tree works even when node files are missing.
+  const parentById = new Map(
+    manifest.nodes.map((e) => [e.id, nodeById.get(e.id)?.parent ?? e.parent]),
+  );
   const treeInputs = fromIndexEntries(
     manifest.nodes.filter((e) => nodeById.has(e.id)),
     parentById,

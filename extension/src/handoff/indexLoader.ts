@@ -43,6 +43,7 @@ export function loadIndex(rawText: string): LoadedIndex {
           title: typeof n.title === 'string' ? n.title : (n.id as string),
           depth: (n.depth as IndexEntry['depth']) ?? 'supporting',
           dependencies: Array.isArray(n.dependencies) ? (n.dependencies as string[]) : [],
+          parent: typeof n.parent === 'string' && n.parent.trim() !== '' ? n.parent.trim() : undefined,
           file: n.file as string,
         }))
     : [];

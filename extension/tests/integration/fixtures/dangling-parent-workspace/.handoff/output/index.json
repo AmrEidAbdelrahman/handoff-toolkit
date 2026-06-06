@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "project_name": "DanglingTest",
+  "generated_at": "2026-06-06T10:00:00Z",
+  "nodes": [
+    { "id": "project-overview", "title": "Project Overview", "depth": "core", "dependencies": [], "file": "nodes/project-overview.md" },
+    { "id": "auth", "title": "Auth", "depth": "supporting", "dependencies": [], "parent": "nonexistent-parent", "file": "nodes/auth.md" }
+  ]
+}

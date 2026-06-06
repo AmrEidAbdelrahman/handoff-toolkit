@@ -39,6 +39,7 @@ export function buildTree(inputs: TreeInput[]): TreeNode[] {
   for (const n of inputs) {
     let p = n.parent && known.has(n.parent) && n.parent !== n.id ? n.parent : undefined;
     if (p && PINNED_IDS.includes(n.id)) p = undefined; // pinned nodes never nest
+    if (p && PINNED_IDS.includes(p)) p = undefined;    // children of pinned roots fall back to depth groups
     resolvedParent.set(n.id, p);
   }
   // Cycle safety: if following parents loops back, drop the parent link.

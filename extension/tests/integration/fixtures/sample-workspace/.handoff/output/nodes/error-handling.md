@@ -3,6 +3,7 @@ id: error-handling
 title: Error Handling
 depth: supporting
 schema_version: 1
+parent: technical-overview
 code_refs:
   - file: src/errors.ts
     note: Error envelope helpers (whole file)

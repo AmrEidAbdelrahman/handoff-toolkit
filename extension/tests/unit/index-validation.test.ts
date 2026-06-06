@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { loadIndex } from '../../src/handoff/indexLoader';
-import { validateFrontmatter, validateBody } from '../../src/handoff/validation';
+import { validateFrontmatter, validateBody, crossCheckParents } from '../../src/handoff/validation';
 
 describe('loadIndex', () => {
   it('loads a valid index', () => {
@@ -40,6 +40,115 @@ describe('loadIndex', () => {
     const { issues } = loadIndex(text);
     assert.ok(issues.some((i) => i.code === 'INDEX_DUP_ID'));
     assert.ok(issues.some((i) => i.code === 'INDEX_BAD_DEPTH'));
+  });
+});
+
+describe('loadIndex — parent field extraction', () => {
+  it('extracts parent when present and non-empty', () => {
+    const text = JSON.stringify({
+      schema_version: 1,
+      project_name: 'Demo',
+      nodes: [
+        { id: 'modules', title: 'Modules', depth: 'supporting', dependencies: [], file: 'nodes/modules.md' },
+        { id: 'auth', title: 'Auth', depth: 'supporting', dependencies: [], parent: 'modules', file: 'nodes/auth.md' },
+      ],
+    });
+    const { manifest } = loadIndex(text);
+    assert.ok(manifest);
+    assert.equal(manifest!.nodes[0].parent, undefined);
+    assert.equal(manifest!.nodes[1].parent, 'modules');
+  });
+
+  it('returns undefined parent when field is absent', () => {
+    const text = JSON.stringify({
+      schema_version: 1,
+      project_name: 'Demo',
+      nodes: [{ id: 'a', title: 'A', depth: 'core', dependencies: [], file: 'nodes/a.md' }],
+    });
+    const { manifest } = loadIndex(text);
+    assert.equal(manifest!.nodes[0].parent, undefined);
+  });
+
+  it('discards non-string parent values silently', () => {
+    const text = JSON.stringify({
+      schema_version: 1,
+      project_name: 'Demo',
+      nodes: [{ id: 'a', title: 'A', depth: 'core', dependencies: [], parent: 42, file: 'nodes/a.md' }],
+    });
+    const { manifest } = loadIndex(text);
+    assert.equal(manifest!.nodes[0].parent, undefined);
+  });
+});
+
+describe('crossCheckParents', () => {
+  it('produces no issues when parent references a present id', () => {
+    const entries = [
+      { id: 'modules', title: 'Modules', depth: 'supporting' as const, dependencies: [], file: 'nodes/modules.md' },
+      { id: 'auth', title: 'Auth', depth: 'supporting' as const, dependencies: [], parent: 'modules', file: 'nodes/auth.md' },
+    ];
+    const issues = crossCheckParents(entries);
+    assert.equal(issues.length, 0);
+  });
+
+  it('warns when parent references a non-existent id (IX-04)', () => {
+    const entries = [
+      { id: 'auth', title: 'Auth', depth: 'supporting' as const, dependencies: [], parent: 'nope', file: 'nodes/auth.md' },
+    ];
+    const issues = crossCheckParents(entries);
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].code, 'INDEX_DANGLING_PARENT');
+    assert.equal(issues[0].severity, 'warning');
+    assert.equal(issues[0].nodeId, 'auth');
+  });
+
+  it('warns when project-overview has a parent set (IX-05)', () => {
+    const entries = [
+      { id: 'modules', title: 'Modules', depth: 'supporting' as const, dependencies: [], file: 'nodes/modules.md' },
+      { id: 'project-overview', title: 'Overview', depth: 'core' as const, dependencies: [], parent: 'modules', file: 'nodes/project-overview.md' },
+    ];
+    const issues = crossCheckParents(entries);
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].code, 'INDEX_ROOT_HAS_PARENT');
+    assert.equal(issues[0].severity, 'warning');
+    assert.equal(issues[0].nodeId, 'project-overview');
+  });
+
+  it('warns when technical-overview has a parent set (IX-05)', () => {
+    const entries = [
+      { id: 'modules', title: 'Modules', depth: 'supporting' as const, dependencies: [], file: 'nodes/modules.md' },
+      { id: 'technical-overview', title: 'Tech', depth: 'core' as const, dependencies: [], parent: 'modules', file: 'nodes/technical-overview.md' },
+    ];
+    const issues = crossCheckParents(entries);
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].code, 'INDEX_ROOT_HAS_PARENT');
+  });
+
+  it('produces no issues when entries have no parent fields', () => {
+    const entries = [
+      { id: 'a', title: 'A', depth: 'core' as const, dependencies: [], file: 'nodes/a.md' },
+      { id: 'b', title: 'B', depth: 'supporting' as const, dependencies: [], file: 'nodes/b.md' },
+    ];
+    assert.equal(crossCheckParents(entries).length, 0);
+  });
+});
+
+describe('dangling parent fixture', () => {
+  it('loads dangling-parent-workspace and surfaces a warning without crashing', () => {
+    const indexJson = JSON.stringify({
+      schema_version: 1,
+      project_name: 'DanglingTest',
+      nodes: [
+        { id: 'project-overview', title: 'Project Overview', depth: 'core', dependencies: [], file: 'nodes/project-overview.md' },
+        { id: 'auth', title: 'Auth', depth: 'supporting', dependencies: [], parent: 'nonexistent-parent', file: 'nodes/auth.md' },
+      ],
+    });
+    const { manifest } = loadIndex(indexJson);
+    assert.ok(manifest, 'index loads despite dangling parent');
+    assert.equal(manifest!.nodes.length, 2);
+
+    const parentIssues = crossCheckParents(manifest!.nodes);
+    assert.ok(parentIssues.some((i) => i.code === 'INDEX_DANGLING_PARENT'), 'dangling parent warning emitted');
+    assert.ok(parentIssues.every((i) => i.severity === 'warning'), 'no hard errors from dangling parent');
   });
 });
 
