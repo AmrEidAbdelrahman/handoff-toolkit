@@ -92,8 +92,38 @@ html, body {
 .inline-mention { cursor: pointer; text-decoration: underline dotted; }
 .inline-mention:hover { background: var(--technical); color: #fff; }
 
+/* F1: symbol navigation */
+.inline-symbol { cursor: pointer; text-decoration: underline dotted; color: var(--vscode-textLink-foreground); }
+.inline-symbol:hover { background: var(--vscode-textLink-activeForeground); color: var(--vscode-editor-background); }
+
+/* F2: collapsed snippet chips */
+.snippet-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; margin: 4px 0;
+  background: var(--vscode-textCodeBlock-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px; cursor: pointer; font-size: 0.85em;
+  font-family: var(--vscode-editor-font-family);
+  transition: background 0.1s;
+}
+.snippet-chip:hover { background: var(--vscode-list-hoverBackground); }
+.chip-icon { color: var(--vscode-textLink-foreground); font-weight: 700; }
+.chip-file { color: var(--vscode-textLink-foreground); }
+.chip-note { color: var(--vscode-descriptionForeground); font-family: var(--vscode-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30ch; }
+
+/* F3: diagram anchor chips (thin, non-intrusive) */
+.diagram-anchor { margin: 6px 0; }
+.diagram-anchor-label {
+  display: inline-block; font-size: 0.78em;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: 3px; padding: 2px 6px;
+  font-style: italic; pointer-events: none;
+}
+
 /* Diagrams pane */
-.diagram-block { margin: 6px 16px 18px; }
+.diagram-block { margin: 6px 16px 18px; border-left: 2px solid transparent; transition: border-color 0.2s; }
+.diagram-block.active { border-left-color: var(--vscode-textLink-foreground); }
 .diagram-caption { font-size: 0.85em; font-weight: 600; color: var(--vscode-foreground); margin: 6px 0; }
 .mermaid-diagram { text-align: center; overflow-x: auto; background: var(--vscode-textCodeBlock-background); border-radius: 6px; padding: 12px; }
 .mermaid-diagram svg { max-width: 100%; height: auto; }
