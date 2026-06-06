@@ -1,10 +1,14 @@
 {
   "name": "handoff",
-  "displayName": "Handoff",
+  "displayName": "Onboarding Handoff",
   "description": "Browse Handoff developer handovers as a guided, three-panel reading experience.",
   "version": "0.3.0",
-  "publisher": "handoff",
+  "publisher": "AmroEid",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AmrEidAbdelrahman/handoff-toolkit.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
