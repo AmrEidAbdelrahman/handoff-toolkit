@@ -48,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onRequestCodeRef: (refIndex) => void showCode(refIndex, panel),
     onNavigate: (direction) => void navigate(direction, panel, tree, treeView, readState),
     onOpenInEditor: (refIndex) => void openInEditor(refIndex),
+    onGotoSymbol: (symbol) => void gotoSymbol(symbol),
   });
 
   async function reload(): Promise<void> {
@@ -173,25 +174,48 @@ async function showNode(
   if (!node) return;
   setCurrent(id);
 
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+
+  // Pre-resolve every code ref so the webview can switch between them
+  // synchronously on scroll — avoids async message races during fast scrolling.
+  const codeRefs: NodePayload['codeRefs'] = await Promise.all(
+    node.codeRefs.map(async (r, i) => {
+      const base: NodePayload['codeRefs'][number] = {
+        index: i,
+        file: r.file,
+        line: r.line,
+        endLine: r.endLine,
+        note: r.note,
+        status: 'file-not-found',
+      };
+      if (!root) return base;
+      const resolution = await resolveCodeRef(root, r);
+      base.status = resolution.status;
+      if (resolution.status === 'ok' && resolution.text !== undefined) {
+        const { html, startLine } = await highlight(r.file, {
+          text: resolution.text,
+          lang: resolution.languageId ?? 'text',
+          highlightStart: resolution.highlightStart,
+          highlightEnd: resolution.highlightEnd,
+        });
+        base.html = html;
+        base.startLine = startLine;
+      }
+      return base;
+    }),
+  );
+
   const payload: NodePayload = {
     id: node.id,
     title: node.title,
     depth: node.depth,
     position: positionOf(node),
     sections: node.sections,
-    codeRefs: node.codeRefs.map((r, i) => ({
-      index: i,
-      file: r.file,
-      line: r.line,
-      endLine: r.endLine,
-      note: r.note,
-    })),
+    codeRefs,
     issues: node.issues,
   };
   panel.showNode(payload);
-
-  // Auto-load the first code ref.
-  if (node.codeRefs.length > 0) await showCode(0, panel);
+  // No separate showCode(0) needed — webview initialises from codeRefs[0] inline.
 
   // Mark read + reflect in the tree/badge.
   const changed = await readState.markRead(id);
@@ -232,6 +256,25 @@ async function showCode(refIndex: number, panel: ReaderPanel): Promise<void> {
     base.startLine = startLine;
   }
   panel.showCode(base);
+}
+
+async function gotoSymbol(symbol: string): Promise<void> {
+  const results = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+    'vscode.executeWorkspaceSymbolProvider',
+    symbol,
+  );
+  if (!results || results.length === 0) return;
+  // Prefer an exact name match; fall back to the first result.
+  const match = results.find((s) => s.name === symbol) ?? results[0];
+  const loc = match.location;
+  try {
+    const doc = await vscode.workspace.openTextDocument(loc.uri);
+    const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+    editor.selection = new vscode.Selection(loc.range.start, loc.range.start);
+    editor.revealRange(loc.range, vscode.TextEditorRevealType.InCenter);
+  } catch {
+    /* non-fatal */
+  }
 }
 
 async function navigate(

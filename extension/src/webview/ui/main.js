@@ -1,4 +1,6 @@
 import mermaid from 'mermaid';
+import { parseSnippetLabel, matchRefByFileAndLine, isIdentifier } from '../refMatch';
+import { activeIndex } from '../scrollSync';
 
 (function () {
   'use strict';
@@ -18,8 +20,11 @@ import mermaid from 'mermaid';
   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: mermaidTheme() });
   let diagramSeq = 0;
 
-  /** @type {{codeRefs: any[], activeRef: number}} */
-  let state = { codeRefs: [], activeRef: 0 };
+  /** @type {{codeRefs: any[], activeRef: number, diagrams: {caption:string,def:string}[], activeDiagram: number}} */
+  let state = { codeRefs: [], activeRef: 0, diagrams: [], activeDiagram: 0 };
+
+  // Scroll guard: prevents the hl.scrollIntoView triggering the doc scroll listener.
+  let ignoreDocScroll = false;
 
   function el(tag, attrs, ...children) {
     const node = document.createElement(tag);
@@ -60,10 +65,9 @@ import mermaid from 'mermaid';
     return /^diagrams?$/i.test((text || '').trim());
   }
 
-  // Pull mermaid blocks out of a section's HTML. Returns the collected diagrams
-  // (each with a caption from the nearest preceding heading) and the HTML with the
-  // mermaid blocks removed so the doc pane keeps only prose.
-  function extractDiagrams(html, fallbackCaption) {
+  // Pull mermaid blocks out of a section's HTML.  Attaches a stable data-diagram-index
+  // attribute to a thin caption anchor left in the HTML so scroll-sync can locate it.
+  function extractDiagrams(html, fallbackCaption, diagramOffset) {
     const tmp = el('div');
     tmp.innerHTML = html;
     const diagrams = [];
@@ -78,16 +82,104 @@ import mermaid from 'mermaid';
         }
         prev = prev.previousElementSibling;
       }
+      const idx = diagramOffset + diagrams.length;
+      // Leave a thin inline anchor chip so the scroll listener can track which
+      // diagram is in view.  It carries no visible content in the doc pane —
+      // the real render is in the diagrams pane.
+      const anchor = el('div', {
+        class: 'diagram-anchor',
+        'data-diagram-index': idx,
+        html: `<span class="diagram-anchor-label">↗ Diagram: ${caption || 'diagram ' + (idx + 1)}</span>`,
+      });
+      pre.replaceWith(anchor);
       diagrams.push({ caption, def: (code.textContent || '').trim() });
-      pre.remove();
     });
     return { diagrams, cleanedHtml: tmp.innerHTML };
+  }
+
+  // ── F2: collapse snippet fenced blocks into clickable chips ──────────────────
+  // Walks the rendered HTML for bold labels followed by a <pre> code block and,
+  // when the label parses to a known (file, startLine) ref, replaces the entire
+  // label+pre with a small chip that fires requestRef on click.  Falls back
+  // silently (leaves the content intact) on any mismatch.
+  function collapseSnippets(scope) {
+    // Bold labels render as <strong> containing either plain text or a link.
+    scope.querySelectorAll('strong').forEach((strong) => {
+      // Flatten the textContent (handles both plain and <a>-wrapped forms).
+      const text = (strong.textContent || '').trim();
+      const parsed = parseSnippetLabel(text);
+      if (!parsed) return;
+
+      const ref = matchRefByFileAndLine(state.codeRefs, parsed.file, parsed.startLine);
+      if (!ref) return;
+
+      // The <pre> block to collapse should be the next sibling element of the
+      // <strong>'s parent paragraph (or the strong itself if it's block-level).
+      const labelEl = strong.closest('p') || strong;
+      const pre = labelEl.nextElementSibling;
+      if (!pre || pre.tagName !== 'PRE') return;
+
+      const lineLabel = `:${ref.line}${ref.endLine && ref.endLine !== ref.line ? '–' + ref.endLine : ''}`;
+      const chip = el('div', {
+        class: 'snippet-chip',
+        'data-ref-index': ref.index,
+        title: ref.note || ref.file,
+        onclick: () => showRefInline(ref.index),
+      },
+        el('span', { class: 'chip-icon' }, '{ }'),
+        el('span', { class: 'chip-file' }, basename(ref.file) + lineLabel),
+        el('span', { class: 'chip-note' }, ref.note || ''),
+      );
+
+      labelEl.replaceWith(chip);
+      pre.remove();
+    });
+  }
+
+  // ── F1: symbol navigation wiring ─────────────────────────────────────────────
+  // Walks <code> elements in the technical section.  For each:
+  //   1. If it matches a code ref (file path or basename), wire it as a ref chip.
+  //   2. Else if it looks like a code identifier, wire it for symbol lookup.
+  function wireInlineMentions(scope) {
+    scope.querySelectorAll('code').forEach((c) => {
+      const text = (c.textContent || '').trim();
+
+      // Already replaced by collapseSnippets (chip) — skip.
+      if (c.closest('.snippet-chip')) return;
+
+      // File-path ref match (existing behaviour, preserved).
+      const refMatch = state.codeRefs.find((r) => r.file === text || basename(r.file) === text);
+      if (refMatch) {
+        c.classList.add('inline-mention');
+        c.addEventListener('click', () => showRefInline(refMatch.index));
+        return;
+      }
+
+      // F1: identifier → symbol lookup via language server.
+      if (isIdentifier(text)) {
+        c.classList.add('inline-symbol');
+        c.addEventListener('click', () => {
+          vscode.postMessage({ type: 'gotoSymbol', symbol: text });
+        });
+      }
+    });
+  }
+
+  // Show a ref using the pre-resolved data already in state (synchronous).
+  function showRefInline(index) {
+    const ref = state.codeRefs[index];
+    if (!ref) return;
+    setActiveTab(index);
+    renderCodeFromRef(ref);
+    // Also tell the host so it can handle explicit tab clicks that need a
+    // fresh resolution (e.g. after a file change since panel was opened).
+    vscode.postMessage({ type: 'requestCodeRef', refIndex: index });
   }
 
   // ── Doc pane ───────────────────────────────────────────────────────────────
 
   function renderNode(msg) {
-    state = { codeRefs: msg.codeRefs || [], activeRef: 0 };
+    state = { codeRefs: msg.codeRefs || [], activeRef: 0, diagrams: [], activeDiagram: 0 };
     clear(docEl);
 
     const pos = msg.position || {};
@@ -112,9 +204,14 @@ import mermaid from 'mermaid';
     const allDiagrams = [];
     for (const section of msg.sections || []) {
       const diagramsSection = isDiagramsHeading(section.headingText);
-      const { diagrams, cleanedHtml } = extractDiagrams(section.html, diagramsSection ? '' : section.headingText);
+      const { diagrams, cleanedHtml } = extractDiagrams(
+        section.html,
+        diagramsSection ? '' : section.headingText,
+        allDiagrams.length,
+      );
       allDiagrams.push(...diagrams);
-      // The dedicated Diagrams section is shown in the diagrams pane, not in docs.
+      // The dedicated Diagrams section contributes diagrams but its prose (if any)
+      // is skipped so diagrams don't appear twice.
       if (diagramsSection) continue;
       if (cleanedHtml.trim() === '') continue;
       const body = el('div', { class: 'sec-body', html: cleanedHtml });
@@ -123,9 +220,13 @@ import mermaid from 'mermaid';
         body,
       );
       docEl.appendChild(sec);
-      if (section.kind === 'technical') wireInlineMentions(body);
+      if (section.kind === 'technical') {
+        collapseSnippets(body);
+        wireInlineMentions(body);
+      }
     }
 
+    state.diagrams = allDiagrams;
     renderCodeRefList();
 
     const hasCode = state.codeRefs.length > 0;
@@ -133,6 +234,9 @@ import mermaid from 'mermaid';
     applyRightLayout(hasCode, hasDiagrams);
     renderCodeTabs();
     renderDiagrams(allDiagrams);
+
+    // Show first ref immediately using pre-resolved data.
+    if (state.codeRefs.length > 0) renderCodeFromRef(state.codeRefs[0]);
   }
 
   function renderCodeRefList() {
@@ -140,23 +244,12 @@ import mermaid from 'mermaid';
     const list = el('div', { class: 'coderef-list' }, el('h3', null, 'Code references'));
     state.codeRefs.forEach((ref) => {
       const lineLabel = ref.line ? `:${ref.line}${ref.endLine && ref.endLine !== ref.line ? '-' + ref.endLine : ''}` : '';
-      list.appendChild(el('div', { class: 'coderef', onclick: () => requestRef(ref.index) },
+      list.appendChild(el('div', { class: 'coderef', onclick: () => showRefInline(ref.index) },
         el('span', { class: 'coderef-file' }, basename(ref.file) + lineLabel),
         el('span', { class: 'coderef-note' }, ref.note || ''),
       ));
     });
     docEl.appendChild(list);
-  }
-
-  function wireInlineMentions(scope) {
-    scope.querySelectorAll('code').forEach((c) => {
-      const text = (c.textContent || '').trim();
-      const match = state.codeRefs.find((r) => r.file === text || basename(r.file) === text);
-      if (match) {
-        c.classList.add('inline-mention');
-        c.addEventListener('click', () => requestRef(match.index));
-      }
-    });
   }
 
   // ── Diagrams pane ────────────────────────────────────────────────────────────
@@ -165,8 +258,8 @@ import mermaid from 'mermaid';
     clear(diagramsEl);
     if (!diagrams.length) return;
     diagramsEl.appendChild(el('div', { class: 'pane-title' }, 'Diagrams'));
-    diagrams.forEach((d) => {
-      const block = el('div', { class: 'diagram-block' });
+    diagrams.forEach((d, i) => {
+      const block = el('div', { class: 'diagram-block', 'data-diagram-index': i });
       if (d.caption) block.appendChild(el('div', { class: 'diagram-caption' }, d.caption));
       const container = el('div', { class: 'mermaid-diagram' });
       block.appendChild(container);
@@ -182,6 +275,62 @@ import mermaid from 'mermaid';
     });
   }
 
+  function setActiveDiagram(index) {
+    if (index < 0 || index >= state.diagrams.length) return;
+    state.activeDiagram = index;
+    diagramsEl.querySelectorAll('.diagram-block').forEach((b) => {
+      b.classList.toggle('active', Number(b.getAttribute('data-diagram-index')) === index);
+    });
+    // Scroll the diagram into view within the diagrams pane (contained scroll).
+    const target = diagramsEl.querySelector(`.diagram-block[data-diagram-index="${index}"]`);
+    if (target) {
+      diagramsEl.scrollTop = target.offsetTop - diagramsEl.clientHeight / 3;
+    }
+  }
+
+  // ── F3: scroll-sync ───────────────────────────────────────────────────────────
+
+  function collectAnchorOffsets(selector, container) {
+    const offsets = [];
+    container.querySelectorAll(selector).forEach((anchor) => {
+      offsets.push(anchor.offsetTop);
+    });
+    return offsets;
+  }
+
+  docEl.addEventListener('scroll', () => {
+    if (ignoreDocScroll) return;
+
+    // Code ref scroll-sync: find snippet chips and coderef list items in doc order.
+    if (state.codeRefs.length > 1) {
+      const chips = docEl.querySelectorAll('.snippet-chip[data-ref-index]');
+      const chipOffsets = [];
+      chips.forEach((c) => chipOffsets.push(c.offsetTop));
+      if (chipOffsets.length > 0) {
+        const idx = activeIndex(chipOffsets, docEl.scrollTop, docEl.clientHeight);
+        const chip = chips[idx];
+        if (chip) {
+          const refIdx = Number(chip.getAttribute('data-ref-index'));
+          if (refIdx !== state.activeRef) {
+            setActiveTab(refIdx);
+            renderCodeFromRef(state.codeRefs[refIdx]);
+          }
+        }
+      }
+    }
+
+    // Diagram scroll-sync: anchor chips placed in the doc by extractDiagrams.
+    if (state.diagrams.length > 1) {
+      const anchors = docEl.querySelectorAll('.diagram-anchor[data-diagram-index]');
+      const anchorOffsets = [];
+      anchors.forEach((a) => anchorOffsets.push(a.offsetTop));
+      if (anchorOffsets.length > 0) {
+        const idx = activeIndex(anchorOffsets, docEl.scrollTop, docEl.clientHeight);
+        if (idx !== state.activeDiagram) setActiveDiagram(idx);
+      }
+    }
+  });
+
   // ── Code pane ────────────────────────────────────────────────────────────────
 
   function renderCodeTabs() {
@@ -193,7 +342,7 @@ import mermaid from 'mermaid';
         class: 'code-tab' + (ref.index === state.activeRef ? ' active' : ''),
         'data-ref': ref.index,
         title: ref.note || ref.file,
-        onclick: () => requestRef(ref.index),
+        onclick: () => showRefInline(ref.index),
       }, basename(ref.file)));
     });
     codeEl.appendChild(tabs);
@@ -207,24 +356,45 @@ import mermaid from 'mermaid';
     });
   }
 
-  function renderCode(msg) {
-    setActiveTab(msg.refIndex);
+  // Render code using the pre-resolved data carried in the ref itself.
+  function renderCodeFromRef(ref) {
     const body = document.getElementById('code-body');
     if (!body) return;
     clear(body);
-    if (msg.status === 'file-not-found') {
-      body.appendChild(el('div', { class: 'code-error' }, `File not found: ${msg.file}`));
+    if (ref.status === 'file-not-found') {
+      body.appendChild(el('div', { class: 'code-error' }, `File not found: ${ref.file}`));
       return;
     }
-    if (msg.status === 'range-out-of-bounds') {
-      body.appendChild(el('div', { class: 'code-error' }, `Referenced line range is beyond the end of ${msg.file}.`));
+    if (ref.status === 'range-out-of-bounds') {
+      body.appendChild(el('div', { class: 'code-error' }, `Referenced line range is beyond the end of ${ref.file}.`));
       return;
     }
-    const wrap = el('div', { class: 'code-html', html: msg.html || '' });
-    if (msg.startLine) wrap.style.setProperty('--start-line', String(msg.startLine - 1));
+    if (!ref.html) {
+      body.appendChild(el('div', { class: 'empty' }, 'Loading…'));
+      return;
+    }
+    const wrap = el('div', { class: 'code-html', html: ref.html });
+    if (ref.startLine) wrap.style.setProperty('--start-line', String(ref.startLine - 1));
     body.appendChild(wrap);
+    // Contained scroll: only moves within the code pane, cannot trigger docEl scroll.
     const hl = wrap.querySelector('.hl-line');
-    if (hl) hl.scrollIntoView({ block: 'center' });
+    if (hl) {
+      const codeBody = body;
+      codeBody.scrollTop = hl.offsetTop - codeBody.clientHeight / 2;
+    }
+  }
+
+  // renderCode handles the showCode message (explicit tab click refreshed from host).
+  function renderCode(msg) {
+    setActiveTab(msg.refIndex);
+    // Merge the freshly-resolved data back into state so subsequent inline renders are current.
+    const ref = state.codeRefs[msg.refIndex];
+    if (ref) {
+      ref.status = msg.status;
+      ref.html = msg.html;
+      ref.startLine = msg.startLine;
+    }
+    renderCodeFromRef(ref || msg);
   }
 
   function requestRef(index) {

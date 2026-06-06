@@ -77,6 +77,30 @@ Produce a validation report in the format defined in the **Part 4 — Validation
 
 ---
 
+## Step 7b — Advisory: `### Product Brief` Content Checks (handover_node only)
+
+Run these advisory checks after Step 7 for `handover_node` documents (or nodes with no `doc_type`). Log each finding as "Advisory (OP-17): <message>" — these do NOT cause a FAIL verdict.
+
+1. **Capability purity**: If `### Product Brief` is present, scan every bullet in the **Capabilities** list. If any bullet contains a backtick, a forward slash `/` (indicating a path or URL fragment), or an identifier matching a known framework term (Django, Flask, FastAPI, Express, Fastify, ViewSet, Router, Blueprint, APIRouter), warn: "Capability bullet may contain a technical identifier — rephrase as a user-facing outcome."
+
+2. **Frontmatter drift (present but unlabelled)**: If `### Product Brief` is present in the body but `product_brief` is NOT in `inferred_fields`, warn: "### Product Brief is present but `product_brief` is missing from `inferred_fields`. Add `product_brief` to `inferred_fields` to prevent reviewer skip."
+
+3. **Frontmatter drift (labelled but absent)**: If `product_brief` is in `inferred_fields` but no `### Product Brief` subsection is found in `## Business Context`, warn: "`product_brief` is listed in `inferred_fields` but no `### Product Brief` subsection is present. Either add the subsection or remove `product_brief` from `inferred_fields`."
+
+4. **Placeholder check**: If a `### Product Brief` subsection exists but contains only placeholder text (e.g., "TODO", "TBD", "placeholder", or a single word), warn: "`### Product Brief` appears to contain placeholder content. Either populate all five elements or remove the subsection entirely."
+
+## Step 7c — Advisory: `api_summary` code_refs Consistency
+
+Run these advisory checks after Step 7 for nodes with `doc_type: api_summary`. Log each finding as "Advisory (OP-12): <message>" — these do NOT cause a FAIL verdict unless OP-12 explicitly requires `code_refs` (source-code path).
+
+1. **Source-code path detection**: If `code_refs` is present in the frontmatter (heuristic: source-code-generated api_summary), count the number of `code_refs` entries. Count the number of endpoint rows in `## Endpoints / Operations` (each row in a Markdown table or each `**METHOD /path**` bold entry counts as one endpoint).
+
+2. **Count mismatch**: If the two counts differ, warn: "`code_refs` has N entries but `## Endpoints / Operations` has M endpoint rows. Each endpoint must have exactly one `code_refs` entry when generated from source code."
+
+3. **File path plausibility**: For each `code_refs` entry, check whether the `file` path value appears (wholly or as a basename) anywhere in the `## Endpoints / Operations` section body. If a `code_refs` entry's `file` cannot be matched to any visible handler reference in the section, warn: "`code_refs` entry for `<file>` has no matching endpoint row visible in `## Endpoints / Operations`."
+
+---
+
 ## Step 8 — Act on the Verdict
 
 **If VALIDATION PASSED**: Report the result. The calling skill (or giver) may proceed to write the file. Do not write the file yourself unless explicitly asked.

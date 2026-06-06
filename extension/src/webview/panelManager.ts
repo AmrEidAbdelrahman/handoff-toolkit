@@ -21,6 +21,10 @@ export interface CodeRefView {
   line?: number;
   endLine?: number;
   note: string;
+  // Pre-resolved at showNode time so the scroll path is synchronous client-side.
+  status: 'ok' | 'file-not-found' | 'range-out-of-bounds';
+  html?: string;
+  startLine?: number;
 }
 
 export interface NodePayload {
@@ -47,6 +51,7 @@ export interface ReaderEvents {
   onRequestCodeRef: (refIndex: number) => void;
   onNavigate: (direction: 'next' | 'previous') => void;
   onOpenInEditor: (refIndex: number) => void;
+  onGotoSymbol: (symbol: string) => void;
 }
 
 export class ReaderPanel {
@@ -99,7 +104,7 @@ export class ReaderPanel {
     };
   }
 
-  private route(msg: { type?: string; refIndex?: number; direction?: 'next' | 'previous' }): void {
+  private route(msg: { type?: string; refIndex?: number; direction?: 'next' | 'previous'; symbol?: string }): void {
     switch (msg.type) {
       case 'ready':
         this.events.onReady();
@@ -113,6 +118,9 @@ export class ReaderPanel {
         break;
       case 'openInEditor':
         if (typeof msg.refIndex === 'number') this.events.onOpenInEditor(msg.refIndex);
+        break;
+      case 'gotoSymbol':
+        if (typeof msg.symbol === 'string' && msg.symbol) this.events.onGotoSymbol(msg.symbol);
         break;
     }
   }
