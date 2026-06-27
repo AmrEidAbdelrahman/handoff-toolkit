@@ -170,7 +170,7 @@ export function validateDependencies(
   return issues;
 }
 
-const RESERVED_ROOT_IDS = new Set(['project-overview', 'technical-overview']);
+const RESERVED_ROOT_IDS = new Set(['project-overview']);
 
 // Rules IX-04 and IX-05: validate parent references in index entries.
 export function crossCheckParents(entries: IndexEntry[]): ValidationIssue[] {

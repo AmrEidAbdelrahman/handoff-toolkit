@@ -10,16 +10,15 @@ const base: TreeInput[] = [
 ];
 
 describe('buildTree', () => {
-  it('pins overviews at root and groups the rest by depth', () => {
+  it('pins only project-overview and groups the rest by depth', () => {
     const roots = buildTree(base);
     assert.equal(roots[0].id, 'project-overview');
     assert.equal(roots[0].kind, 'pinned');
-    assert.equal(roots[1].id, 'technical-overview');
+    // technical-overview is no longer pinned — it appears in the core depth group
     const groups = roots.filter((r) => r.kind === 'group').map((g) => g.depth);
     assert.deepEqual(groups, ['core', 'supporting', 'peripheral']);
-    // overviews are not also in the core group
     const core = roots.find((r) => r.id === 'group:core')!;
-    assert.deepEqual(core.children.map((c) => c.id), ['auth']);
+    assert.deepEqual(core.children.map((c) => c.id), ['technical-overview', 'auth']);
   });
 
   it('omits empty depth groups and absent overviews', () => {

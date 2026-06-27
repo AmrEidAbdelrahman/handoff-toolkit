@@ -3,7 +3,7 @@ id: dev-environment
 title: Dev Environment
 depth: peripheral
 schema_version: 1
-parent: technical-overview
+parent: technical
 code_refs:
   - file: src/index.ts
     line: 1

@@ -2,7 +2,7 @@
   "name": "handoff",
   "displayName": "Onboarding Handoff",
   "description": "Browse Handoff developer handovers as a guided, three-panel reading experience.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "AmroEid",
   "license": "MIT",
   "repository": {
