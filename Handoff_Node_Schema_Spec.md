@@ -82,7 +82,7 @@ generated_at: ISO 8601 datetime
 
 | Field | Type | Description | Validation |
 |-------|------|-------------|------------|
-| `parent` | string | The `id` of the parent node in the same output. Absence means root-level. Parent/grouping nodes have no `parent`; leaf nodes reference their grouping node's `id`. | Must match `^[a-z0-9]+(-[a-z0-9]+)*$`. Must not equal the node's own `id`. Must not create a cycle. Must not be set on reserved root nodes (`project-overview`, `technical-overview`). |
+| `parent` | string | The `id` of the parent node in the same output. Absence means root-level. Parent/grouping nodes have no `parent`; leaf nodes reference their grouping node's `id`. | Must match `^[a-z0-9]+(-[a-z0-9]+)*$`. Must not equal the node's own `id`. Must not create a cycle. Must not be set on the reserved root node (`project-overview`). |
 | `dependencies` | array of strings | IDs of other nodes this section relates to. | Each value must be a valid node `id` that exists in the index. |
 | `tags` | array of strings | Freeform tags for filtering and grouping. | Lowercase, hyphenated. Max 10 tags. |
 | `generated_at` | string | When this node was generated or last updated. | ISO 8601 format: `2026-05-23T14:30:00Z` |
@@ -160,14 +160,24 @@ The index file is the master manifest of all nodes. The extension reads this fir
 
 ### Reserved Root Nodes
 
-Two node IDs are reserved and always expected to be present in toolkit-generated output:
+One node ID is reserved and always expected to be present in toolkit-generated output:
 
 | ID | Depth | Parent |
 |----|-------|--------|
-| `project-overview` | `core` | none (always root-level) |
-| `technical-overview` | `core` | none (always root-level) |
+| `project-overview` | `core` | none (always root-level, pinned) |
 
-These nodes are pinned at the top of the sidebar tree. They must never have a `parent` field set.
+This node is pinned at the top of the sidebar tree. It must never have a `parent` field set.
+
+### Standard Branch Nodes
+
+By convention, toolkit-generated output uses two root-level branch nodes as the primary navigation structure:
+
+| ID | Depth | Purpose |
+|----|-------|---------|
+| `business` | `core` | Root of the business domain tree — contains domain nodes organised by business purpose |
+| `technical` | `core` | Root of the technical structure tree — contains branches organised by code structure (services, api, infrastructure, etc.) |
+
+These are regular nodes (not reserved, not pinned). They have no `parent` field set and appear in the `core` depth group. Their children use `parent: "business"` or `parent: "technical"` to nest under them. Existing output using `technical-overview` as a root-level node continues to render without errors — `technical-overview` is no longer a reserved pinned root and is treated as a regular node.
 
 ### Index Rules
 
@@ -213,7 +223,7 @@ These rules define what makes a node valid. The toolkit should validate before w
 7. If `dependencies` is present, each value is a non-empty string
 8. If `line` is present in a `code_ref`, it is a positive integer
 9. If `end_line` is present, `line` must also be present and `end_line >= line`
-10. If `parent` is present, it must be a non-empty string matching `^[a-z0-9]+(-[a-z0-9]+)*$`, must not equal the node's own `id`, must not create a circular reference chain, and must not be set on the reserved root ids `project-overview` or `technical-overview`
+10. If `parent` is present, it must be a non-empty string matching `^[a-z0-9]+(-[a-z0-9]+)*$`, must not equal the node's own `id`, must not create a circular reference chain, and must not be set on the reserved root id `project-overview`
 
 ### Body Validation
 
@@ -233,7 +243,7 @@ These rules define what makes a node valid. The toolkit should validate before w
 5. No duplicate `id` values
 6. Every `.md` file in `nodes/` has a corresponding index entry
 7. If a node entry has a `parent` field, the referenced `id` must exist elsewhere in the index (missing reference → warning; node renders at root level)
-8. Reserved root node ids (`project-overview`, `technical-overview`) must not have a `parent` field set
+8. The reserved root node id `project-overview` must not have a `parent` field set
 
 ---
 
@@ -422,7 +432,7 @@ Setup is: copy `.env.example` to `.env`, run `docker-compose up`, then `npm run 
 {
   "schema_version": 1,
   "project_name": "ClientPortal",
-  "generated_at": "2026-05-23T14:45:00Z",
+  "generated_at": "2026-06-07T14:45:00Z",
   "nodes": [
     {
       "id": "project-overview",
@@ -432,40 +442,97 @@ Setup is: copy `.env.example` to `.env`, run `docker-compose up`, then `npm run 
       "file": "nodes/project-overview.md"
     },
     {
-      "id": "technical-overview",
-      "title": "Technical Overview",
+      "id": "business",
+      "title": "Business",
       "depth": "core",
       "dependencies": [],
-      "file": "nodes/technical-overview.md"
+      "file": "nodes/business.md"
     },
     {
-      "id": "modules",
-      "title": "Modules",
+      "id": "technical",
+      "title": "Technical",
+      "depth": "core",
+      "dependencies": [],
+      "file": "nodes/technical.md"
+    },
+    {
+      "id": "billing",
+      "title": "Billing",
+      "depth": "supporting",
+      "dependencies": ["payment-service", "billing-routes"],
+      "parent": "business",
+      "file": "nodes/billing.md"
+    },
+    {
+      "id": "user-management",
+      "title": "User Management",
+      "depth": "supporting",
+      "dependencies": ["user-service", "user-routes"],
+      "parent": "business",
+      "file": "nodes/user-management.md"
+    },
+    {
+      "id": "services",
+      "title": "Services",
       "depth": "supporting",
       "dependencies": [],
-      "file": "nodes/modules.md"
+      "parent": "technical",
+      "file": "nodes/services.md"
     },
     {
-      "id": "authentication",
-      "title": "Authentication & Session Management",
-      "depth": "core",
-      "dependencies": ["user-management", "database"],
-      "parent": "modules",
-      "file": "nodes/authentication.md"
-    },
-    {
-      "id": "api-error-handling",
-      "title": "API Error Handling & Response Format",
+      "id": "payment-service",
+      "title": "Payment Service",
       "depth": "supporting",
-      "dependencies": ["authentication"],
-      "parent": "modules",
-      "file": "nodes/api-error-handling.md"
+      "dependencies": ["billing"],
+      "parent": "services",
+      "file": "nodes/payment-service.md"
+    },
+    {
+      "id": "user-service",
+      "title": "User Service",
+      "depth": "supporting",
+      "dependencies": ["user-management"],
+      "parent": "services",
+      "file": "nodes/user-service.md"
+    },
+    {
+      "id": "api",
+      "title": "API",
+      "depth": "supporting",
+      "dependencies": [],
+      "parent": "technical",
+      "file": "nodes/api.md"
+    },
+    {
+      "id": "billing-routes",
+      "title": "Billing Routes",
+      "depth": "supporting",
+      "dependencies": ["billing"],
+      "parent": "api",
+      "file": "nodes/billing-routes.md"
+    },
+    {
+      "id": "user-routes",
+      "title": "User Routes",
+      "depth": "supporting",
+      "dependencies": ["user-management"],
+      "parent": "api",
+      "file": "nodes/user-routes.md"
+    },
+    {
+      "id": "infrastructure",
+      "title": "Infrastructure",
+      "depth": "peripheral",
+      "dependencies": [],
+      "parent": "technical",
+      "file": "nodes/infrastructure.md"
     },
     {
       "id": "dev-environment",
-      "title": "Development Environment & Local Setup",
+      "title": "Development Environment",
       "depth": "peripheral",
       "dependencies": [],
+      "parent": "infrastructure",
       "file": "nodes/dev-environment.md"
     }
   ]

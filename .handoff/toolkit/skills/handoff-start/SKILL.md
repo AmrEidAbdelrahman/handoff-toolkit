@@ -104,83 +104,184 @@ Print a brief status line: "Identified N business domains. Documenting autonomou
 
 ---
 
-### Step 2.4 — Infer tree shape and write proposed_tree
+### Step 2.4 — Detect dual-tree structure
 
 Run immediately after Step 2.3. Use the domains and manifest files already read in Steps 2.1–2.3 — no extra file reads required.
 
-**Goal**: Decide what parent/grouping nodes to create and which domain nodes sit under which parent. Write the result as `proposed_tree` in `session.json`.
+**Goal**: Produce two parallel tree maps — one for the business tree (organised by domain) and one for the technical tree (organised by code structure) — and infer the cross-references between them. Write both to `session.json`. Then present them to the giver for confirmation (Step 2.5) before any node is generated.
 
-#### 2.4.1 — Detect project type
+#### 2.4.1 — Business domain detection
 
-Apply the following signals in order and stop at the first match:
+Using the domains already identified in Step 2.2, build the business tree. For each domain in `pending_sections`:
 
-**Backend API** (Django, Express, Flask, Rails, FastAPI, etc.):
-Signals: presence of `urls.py`, `routes.*`, `router.*`, `views.*`, `controllers.*` in multiple directories, OR an HTTP framework name in `package.json`/`pyproject.toml`/`Gemfile`.
-Groupings: `modules` (one per business domain), `api` (route groups), `infrastructure` (database, deployment, dev setup).
+1. Derive a node id: lowercase hyphenated form of the domain name (e.g., "User Management" → `user-management`; "Billing" → `billing`).
+2. Assign `parent: "business"` — all business domain nodes are direct children of the `business` root node.
+3. For sub-domains identified in Step 2.2 (e.g., sub-features within a domain): assign `parent: "<domain-id>"` so they nest under their domain.
 
-**React / Vue / Angular frontend**:
-Signals: `components/`, `pages/`, `views/` directories at the source level, OR `react`/`vue`/`@angular/core` in `package.json` dependencies.
-Groupings: `pages` (if page/screen directories exist), `components` (component systems), `state-management` (if a store or context directory is found), `infrastructure` (routing, api-client, build config).
+If no business domains were identified (e.g., a utility library with no clear domain structure), create a single `general` business domain and note this to the giver in Step 2.5.
 
-**Microservices**:
-Signals: multiple independent `package.json`/`pyproject.toml`/`Cargo.toml`/`go.mod` at the second directory level, OR multiple Docker Compose service definitions with distinct source directories.
-Groupings: each service becomes a root-level parent; each service parent gets `modules` and `api` children inside it; `infrastructure` is a shared root-level parent for cross-service concerns.
-
-**Library / SDK / Package**:
-Signals: a single `src/` or `lib/` directory, no route files, no UI component directories, a `README` describing a public API.
-Groupings: `core` (primary library logic), `api` (public surface area), `infrastructure` (build, CI, dev tooling).
-
-**Fallback**:
-When no pattern is confidently matched, use the minimal tree: `project-overview` and `technical-overview` only. All domain nodes are root-level (no `parent`). Print a note: "Tree auto-classification not possible for this project — documenting as flat structure."
-
-#### 2.4.2 — Construct proposed_tree
-
-Build a flat map `{ node-id → parent-id | null }`:
-
-1. Always include: `"project-overview": null` and `"technical-overview": null`.
-2. For each grouping category determined in 2.4.1 (e.g., `modules`, `api`, `infrastructure`): add `"<category>": null` (root-level grouping node).
-3. For each domain in `pending_sections`: derive a node id (lowercase hyphenated form of the domain name, e.g., "User Management" → `user-management`) and assign it under the appropriate grouping. For Backend API projects, domain nodes go under `modules`. For frontend projects, domain nodes go under their matching grouping (`pages`, `components`, etc.) based on what their directory contains.
-4. For sub-domains (e.g., a domain with sub-features identified in Step 2.2): add nested entries where the sub-domain's parent is the domain node id.
-
-Example for a Node.js API project with User Management, Competition, and Infrastructure domains:
+Business tree always starts with:
 ```json
 {
-  "project-overview": null,
-  "technical-overview": null,
-  "modules": null,
-  "user-management": "modules",
-  "competition": "modules",
-  "api": null,
-  "user-endpoints": "api",
-  "competition-endpoints": "api",
-  "infrastructure": null,
+  "business": null
+}
+```
+Then add domain and sub-domain entries:
+```json
+{
+  "business": null,
+  "user-management": "business",
+  "billing": "business",
+  "subscription-model": "billing",
+  "notifications": "business"
+}
+```
+
+#### 2.4.2 — Technical structure detection
+
+Scan the project for code-structure signals and build the technical tree. Detect technical branches by presence of files/directories:
+
+- `services/` OR files matching `*.service.*` → `services` branch
+- `routes/`, `controllers/`, `api/`, `endpoints/` OR route framework imports → `api` branch
+- `models/`, `schemas/`, `migrations/` → `data-model` branch
+- `components/`, `pages/`, `views/` (only for frontend projects) → `ui` branch
+- `Dockerfile`, `docker-compose.yml`, `k8s/`, `terraform/`, `.github/workflows/` → `infrastructure` branch
+- `lib/`, `utils/`, `helpers/` (only if substantial — more than 3 files) → `shared` branch
+
+Include only branches where at least one file was detected. For each detected branch, enumerate its key leaf nodes (service files, route files, model files, etc.) as children.
+
+Technical tree always starts with:
+```json
+{
+  "technical": null
+}
+```
+Then add branch and leaf entries:
+```json
+{
+  "technical": null,
+  "services": "technical",
+  "user-service": "services",
+  "payment-service": "services",
+  "api": "technical",
+  "user-routes": "api",
+  "billing-routes": "api",
+  "data-model": "technical",
+  "user-schema": "data-model",
+  "infrastructure": "technical",
   "database": "infrastructure",
   "dev-environment": "infrastructure"
 }
 ```
 
-#### 2.4.3 — Write proposed_tree to session.json
+**Fallback**: If no stack-specific patterns are found (e.g., a pure script or config repo), create a single `general-technical` child of `technical` and note this to the giver.
 
-Add the `proposed_tree` key to the existing `session.json` object and write it. Do not replace the full session.json — merge the new key in.
+#### 2.4.3 — Infer cross-references
 
-Also add a `grouping_nodes` list to session.json — the set of ids that appear only as parent values (not as domain sections). These need to be generated as grouping nodes in 2.4.4.
+For each business domain node, find the technical leaf nodes that implement it by name similarity and import analysis:
+- A business domain named `billing` likely maps to technical nodes named `payment-service`, `billing-routes`, `billing-schema`.
+- A business domain named `user-management` likely maps to `user-service`, `user-routes`, `user-schema`.
 
-Example addition to session.json:
+Build a bidirectional `cross_references` map:
 ```json
-"proposed_tree": { ... },
-"grouping_nodes": ["modules", "api", "infrastructure"]
+{
+  "billing": ["payment-service", "billing-routes"],
+  "user-management": ["user-service", "user-routes"],
+  "payment-service": ["billing"],
+  "billing-routes": ["billing"],
+  "user-service": ["user-management"],
+  "user-routes": ["user-management"]
+}
 ```
 
-#### 2.4.4 — Generate grouping nodes
+Store this map in memory — it is used to populate `dependencies` when writing each node.
 
-For each id in `grouping_nodes`: generate and write a full handover node file immediately. Grouping nodes:
-- Have `depth: supporting` (or `core` for the primary business/technical groupings like `modules`)
-- Have no `parent` (they are root-level, under the pinned overviews conceptually but not nested under them in the tree)
-- Have no `code_refs` (grouping nodes describe a layer, not a specific file)
-- Have `## Business Context`: explain WHY this layer exists from a product and architectural perspective — what problem it solves, what value it organises
-- Have `## Technical Context`: describe HOW the pieces within this layer relate to each other — shared patterns, interaction model, entry points
+#### 2.4.4 — Write proposed trees to session.json
 
-Write the node file to `.handoff/output/nodes/<id>.md` and add the entry to `index.json` before any domain leaf nodes that reference it as a parent.
+Add the following keys to the existing `session.json` object (merge, do not replace):
+
+```json
+"proposed_business_tree": {
+  "business": null,
+  "billing": "business",
+  "subscription-model": "billing"
+},
+"proposed_technical_tree": {
+  "technical": null,
+  "services": "technical",
+  "payment-service": "services"
+},
+"cross_references": {
+  "billing": ["payment-service"],
+  "payment-service": ["billing"]
+},
+"grouping_nodes": ["business", "technical", "services", "api", "data-model", "infrastructure"]
+```
+
+`grouping_nodes` contains all node ids that appear as parent values (not as domain leaf sections) — these are generated as grouping/branch nodes in Step 2.4.5.
+
+#### 2.4.5 — Generate grouping nodes
+
+For each id in `grouping_nodes`: generate and write a full handover node file immediately, before Step 2.5. Grouping nodes:
+- `business` and `technical`: `depth: core`, no `parent`, no `code_refs`
+- Business branch nodes (e.g., domain groupings): `depth: supporting`, `parent: "business"`, no `code_refs`
+- Technical branch nodes (e.g., `services`, `api`, `infrastructure`): `depth: supporting`, `parent: "technical"`, no `code_refs`
+- `## Business Context`: explain WHY this grouping exists from a product perspective
+- `## Technical Context`: describe HOW the pieces within this grouping relate to each other
+
+Write each node file to `.handoff/output/nodes/<id>.md` and add its entry to `index.json` before any leaf nodes that reference it as a parent.
+
+---
+
+### Step 2.5 — Present proposed trees and get giver confirmation
+
+Run immediately after Step 2.4. Present both trees to the giver in a single message, then wait for confirmation before generating any domain or leaf nodes.
+
+**Format the message as follows**:
+
+```
+I've scanned the project and identified this structure:
+
+Business tree:
+business
+├── user-management
+│   └── registration-flow
+├── billing
+│   ├── subscription-model
+│   └── pricing-rules
+└── notifications
+
+Technical tree:
+technical
+├── services
+│   ├── user-service
+│   └── payment-service
+├── api
+│   ├── user-routes
+│   └── billing-routes
+└── infrastructure
+    └── dev-environment
+
+Cross-references inferred:
+- billing ↔ payment-service, billing-routes
+- user-management ↔ user-service, user-routes
+
+You can adjust before I start generating:
+- Merge domains: "merge user-management and admin"
+- Rename: "rename billing to monetization"
+- Add: "add a third-party-integrations domain — Stripe, SendGrid, Twilio"
+- Remove: "remove the shared branch"
+- Adjust cross-refs: "billing also links to stripe-webhooks"
+
+Say "looks good" when ready.
+```
+
+**Wait for the giver's response.** Process any adjustments:
+- For each adjustment, update the in-memory trees and re-render the ASCII tree.
+- Re-present the updated trees until the giver confirms.
+- Once confirmed, update `session.json` with the final `proposed_business_tree`, `proposed_technical_tree`, and `cross_references` values.
+- Update `grouping_nodes` if any new grouping nodes were added during adjustment.
+- Generate any new grouping nodes added during adjustment (per Step 2.4.5) before proceeding to Part 2d.
 
 ---
 
@@ -631,6 +732,22 @@ After processing all affected and new sections, proceed to Part 5 (session compl
 
 ## Part 5 — Node Save Workflow
 
+### Generation order (dual-tree)
+
+Process sections from `pending_sections` in this order:
+
+1. **Business nodes first** — all nodes whose id appears in `proposed_business_tree` (i.e., `business`, business domain nodes, and business leaf nodes). Generate root → domains → leaves.
+   - For each **business leaf node**: before writing, prompt the giver for WHY context the toolkit cannot extract from code: "Why does this domain/feature exist? What are the key business rules? What decisions were made and why? What warnings does the next developer need?" Wait for the giver's answer and incorporate it into the `## Business Context`, `## Decisions`, and `## Warnings` sections. The `## Technical Context` section is pre-filled with a pointer to the cross-referenced technical nodes: "Implemented by: <dep-id>, <dep-id>. See those nodes for implementation details."
+   - For each **business grouping/branch node**: generate from code signals (no giver prompt needed — these describe a layer, not a specific business rule).
+
+2. **Technical nodes second** — all nodes whose id appears in `proposed_technical_tree` (i.e., `technical`, technical branch nodes, and technical leaf nodes). Generate root → branches → leaves.
+   - For each **technical leaf node**: draft the full node from code analysis (Step 3.2–3.9). The `## Business Context` section is pre-filled with a pointer back: "Implements <business-node-title>. See <dep-id> for business rules and strategy." The `## Technical Context` is a deep dive into the code.
+   - After drafting, present the node to the giver for review: "I've drafted <node-title> — does this look right? Anything to add?" Wait for the giver's response and incorporate any additions.
+
+3. **`project-overview` last** — generated after both trees are complete, so it can reference both `business` and `technical` branches.
+
+**Populating `dependencies`**: For each node, populate the `dependencies` array from `cross_references[node-id]` (set in Step 2.4.3 / confirmed in Step 2.5). The extension renders these as clickable cross-reference links.
+
 For each section processed in Part 3 (or Part 4 for delta re-runs), save the node as follows.
 
 ### Step 5.1 — Determine node id
@@ -679,7 +796,7 @@ id: <id>
 title: <domain name>
 depth: <core | supporting | peripheral>
 schema_version: 1
-parent: <parent-id from proposed_tree, if non-null — omit the field entirely if null/absent>
+parent: <parent-id from proposed_business_tree or proposed_technical_tree for this node, if non-null — omit the field entirely if null/absent>
 generated_at: <current ISO 8601 timestamp>
 code_refs:
   # One entry per inline snippet collected in Step 3.7 — these make the code
@@ -896,7 +1013,7 @@ Add the new node as an entry in the `nodes` array. Include the `parent` field if
   "title": "<section name>",
   "depth": "<depth>",
   "dependencies": [],
-  "parent": "<parent-id from proposed_tree — omit this key entirely if null/absent>",
+  "parent": "<parent-id from proposed_business_tree or proposed_technical_tree — omit this key entirely if null/absent>",
   "file": "nodes/<id>.md"
 }
 ```

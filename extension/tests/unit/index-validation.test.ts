@@ -113,14 +113,13 @@ describe('crossCheckParents', () => {
     assert.equal(issues[0].nodeId, 'project-overview');
   });
 
-  it('warns when technical-overview has a parent set (IX-05)', () => {
+  it('does not warn when technical-overview has a parent (no longer a reserved root)', () => {
     const entries = [
-      { id: 'modules', title: 'Modules', depth: 'supporting' as const, dependencies: [], file: 'nodes/modules.md' },
-      { id: 'technical-overview', title: 'Tech', depth: 'core' as const, dependencies: [], parent: 'modules', file: 'nodes/technical-overview.md' },
+      { id: 'technical', title: 'Technical', depth: 'core' as const, dependencies: [], file: 'nodes/technical.md' },
+      { id: 'technical-overview', title: 'Tech', depth: 'core' as const, dependencies: [], parent: 'technical', file: 'nodes/technical-overview.md' },
     ];
     const issues = crossCheckParents(entries);
-    assert.equal(issues.length, 1);
-    assert.equal(issues[0].code, 'INDEX_ROOT_HAS_PARENT');
+    assert.equal(issues.length, 0);
   });
 
   it('produces no issues when entries have no parent fields', () => {

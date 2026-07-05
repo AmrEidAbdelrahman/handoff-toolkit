@@ -3,7 +3,7 @@ id: authentication
 title: Authentication
 depth: core
 schema_version: 1
-parent: technical-overview
+parent: services
 code_refs:
   - file: src/auth/index.ts
     line: 1

@@ -4,11 +4,14 @@
   "generated_at": "2026-06-01T10:00:00Z",
   "nodes": [
     { "id": "project-overview", "title": "Project Overview", "depth": "core", "dependencies": [], "file": "nodes/project-overview.md" },
-    { "id": "technical-overview", "title": "Technical Overview", "depth": "core", "dependencies": [], "file": "nodes/technical-overview.md" },
-    { "id": "authentication", "title": "Authentication", "depth": "core", "dependencies": ["error-handling"], "parent": "technical-overview", "file": "nodes/authentication.md" },
-    { "id": "error-handling", "title": "Error Handling", "depth": "supporting", "dependencies": [], "parent": "technical-overview", "file": "nodes/error-handling.md" },
-    { "id": "dev-environment", "title": "Dev Environment", "depth": "peripheral", "dependencies": [], "parent": "technical-overview", "file": "nodes/dev-environment.md" },
+    { "id": "business", "title": "Business", "depth": "core", "dependencies": [], "file": "nodes/business.md" },
+    { "id": "technical", "title": "Technical", "depth": "core", "dependencies": [], "file": "nodes/technical.md" },
+    { "id": "billing", "title": "Billing", "depth": "supporting", "dependencies": ["authentication", "api-summary"], "parent": "business", "file": "nodes/billing.md" },
+    { "id": "services", "title": "Services", "depth": "supporting", "dependencies": [], "parent": "technical", "file": "nodes/services.md" },
+    { "id": "authentication", "title": "Authentication", "depth": "core", "dependencies": ["error-handling"], "parent": "services", "file": "nodes/authentication.md" },
+    { "id": "error-handling", "title": "Error Handling", "depth": "supporting", "dependencies": [], "parent": "technical", "file": "nodes/error-handling.md" },
+    { "id": "dev-environment", "title": "Dev Environment", "depth": "peripheral", "dependencies": [], "parent": "technical", "file": "nodes/dev-environment.md" },
     { "id": "jwt-internals", "title": "JWT Internals", "depth": "supporting", "dependencies": [], "parent": "authentication", "file": "nodes/jwt-internals.md" },
-    { "id": "api-summary", "title": "API Summary", "depth": "supporting", "dependencies": [], "parent": "technical-overview", "file": "nodes/api-summary.md", "doc_type": "api_summary" }
+    { "id": "api-summary", "title": "API Summary", "depth": "supporting", "dependencies": [], "parent": "technical", "file": "nodes/api-summary.md", "doc_type": "api_summary" }
   ]
 }

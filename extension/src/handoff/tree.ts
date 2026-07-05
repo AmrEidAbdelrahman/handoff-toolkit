@@ -9,7 +9,7 @@ const DEPTH_LABEL: Record<Depth, string> = {
   supporting: 'Supporting',
   peripheral: 'Peripheral',
 };
-const PINNED_IDS = ['project-overview', 'technical-overview'];
+const PINNED_IDS = ['project-overview'];
 
 /** Minimal shape buildTree needs from each node (index order is the input order). */
 export interface TreeInput {

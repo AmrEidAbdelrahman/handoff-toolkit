@@ -4,6 +4,7 @@ title: API Summary
 depth: supporting
 schema_version: 1
 doc_type: api_summary
+parent: technical
 code_refs:
   - file: src/auth/index.ts
     line: 3
